@@ -22,7 +22,8 @@ export class DebugOverlay {
         window.addEventListener('resize', () => this.resize());
         window.addEventListener('keydown', (e) => {
             if (e.key === 'd' || e.key === 'D') {
-                CONFIG.debug = !CONFIG.debug;
+                CONFIG.viewMode = (CONFIG.viewMode + 1) % 3;
+                CONFIG.debug = (CONFIG.viewMode === 2);
             }
         });
     }

@@ -17,6 +17,13 @@ export const CONFIG = {
     depthSmoothing: 0.05,
     /** Enable or disable debug mode */
     debug: false,
+    /**
+     * View mode:
+     * 0: Lattice Only
+     * 1: Lattice + Triangle
+     * 2: Lattice + Triangle + Debug
+     */
+    viewMode: 1,
     /** Grid visual settings */
     grid: {
         size: 10000,
