@@ -59,24 +59,31 @@ export class App {
 
         this.debug = new DebugOverlay('debug-layer');
 
-        this._wireAudioStartOverlay();
+        this._initAudioOnInteraction();
         this._init();
     }
 
     /**
-     * Sets up the start overlay to initialize audio on user interaction.
+     * Initializes audio on the first user interaction (click, keypress, etc.).
      * @private
      */
-    _wireAudioStartOverlay() {
-        const overlay = document.getElementById('start-overlay');
-        if (overlay) {
-            overlay.addEventListener('click', async () => {
-                await this.audio.init(this.performers.length);
-                this.audio.resume();
-                overlay.style.opacity = 0;
-                setTimeout(() => overlay.style.display = 'none', 500);
-            }, { once: true });
-        }
+    _initAudioOnInteraction() {
+        let initialized = false;
+        const startAudio = async () => {
+            if (initialized) return;
+            initialized = true;
+
+            await this.audio.init(this.performers.length);
+            this.audio.resume();
+
+            window.removeEventListener('click', startAudio);
+            window.removeEventListener('keydown', startAudio);
+            window.removeEventListener('touchstart', startAudio);
+        };
+
+        window.addEventListener('click', startAudio);
+        window.addEventListener('keydown', startAudio);
+        window.addEventListener('touchstart', startAudio);
     }
 
     /**
