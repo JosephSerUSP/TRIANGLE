@@ -1,6 +1,15 @@
-// src/systems/AudioSystem.js
 import * as THREE from 'three';
 import { CONFIG } from '../core/Config.js';
+
+// Hamauzu-style Chord Ratios (Relative to D2 Root)
+// P1: D2 (1.0), A2 (1.5)
+// P2: G3 (2.66...), E4 (4.5)
+// P3: B4 (6.66...), C#5 (7.5)
+const CHORD_RATIOS = [
+    { a: 1.0, b: 1.5 },     // Bass: D2 + A2
+    { a: 2.6667, b: 4.5 },  // Mid: G3 + E4
+    { a: 6.6667, b: 7.5 }   // High: B4 + C#5
+];
 
 /**
  * Manages audio synthesis for the application.
@@ -73,7 +82,7 @@ export class AudioSystem {
     }
 
     /**
-     * Creates a single audio voice (synthesizer).
+     * Creates a single audio voice (synthesizer) with two independent oscillators/gains.
      * @private
      * @returns {Object} The voice object containing oscillators and filters.
      */
@@ -81,47 +90,55 @@ export class AudioSystem {
         const v = {};
 
         // Oscillators
-        v.osc1 = this.ctx.createOscillator();
-        v.osc2 = this.ctx.createOscillator();
+        v.oscA = this.ctx.createOscillator();
+        v.oscB = this.ctx.createOscillator();
 
-        // Gain (VCA)
-        v.gain = this.ctx.createGain();
+        // Independent Gains
+        v.gainA = this.ctx.createGain();
+        v.gainB = this.ctx.createGain();
 
         // Filters
         v.highpass = this.ctx.createBiquadFilter();
         v.filter = this.ctx.createBiquadFilter(); // Lowpass
 
         // Configuration
-        v.osc1.type = 'sawtooth';
-        v.osc2.type = 'triangle';
+        v.oscA.type = 'sawtooth';
+        v.oscB.type = 'sawtooth'; // Both saws for digital string feel
 
-        v.osc1.frequency.value = CONFIG.audio.rootFreq;
-        v.osc2.frequency.value = CONFIG.audio.rootFreq;
+        v.oscA.frequency.value = CONFIG.audio.rootFreq;
+        v.oscB.frequency.value = CONFIG.audio.rootFreq;
 
-        v.osc1.detune.value = 0;
-        v.osc2.detune.value = 4; // Slight detune as requested
+        // Slight detune for ensemble feel
+        v.oscA.detune.value = -3;
+        v.oscB.detune.value = 3;
 
-        v.gain.gain.value = 0.0;
+        v.gainA.gain.value = 0.0;
+        v.gainB.gain.value = 0.0;
 
         // Highpass Setup
         v.highpass.type = 'highpass';
-        v.highpass.frequency.value = 10; // Default to bypass (low)
+        v.highpass.frequency.value = 100; // Default clear mud
         v.highpass.Q.value = 0.7;
 
         // Lowpass Setup
         v.filter.type = 'lowpass';
         v.filter.Q.value = 1.0;
-        v.filter.frequency.value = 8000; // Fixed High Brightness from snippet
+        v.filter.frequency.value = 8000; // Bright digital
 
-        // Routing: Osc -> Gain -> Highpass -> Lowpass -> Out
-        v.osc1.connect(v.gain);
-        v.osc2.connect(v.gain);
+        // Routing:
+        // OscA -> GainA -> Highpass
+        // OscB -> GainB -> Highpass
+        // Highpass -> Lowpass -> Out
+        v.oscA.connect(v.gainA);
+        v.gainA.connect(v.highpass);
 
-        v.gain.connect(v.highpass);
+        v.oscB.connect(v.gainB);
+        v.gainB.connect(v.highpass);
+
         v.highpass.connect(v.filter);
 
-        v.osc1.start();
-        v.osc2.start();
+        v.oscA.start();
+        v.oscB.start();
 
         return v;
     }
@@ -145,12 +162,13 @@ export class AudioSystem {
         if (!this.isReady) return;
         const now = this.ctx.currentTime;
 
-        // Determine active indices to assign roles
-        // Logic: Lowest active index = Bass, others = Harmony
-        const activeIdxs = [];
-        performers.forEach((p, i) => {
-            if (p.hasPerformer) activeIdxs.push(i);
-        });
+        // Determine active indices to assign roles (Bass, Mid, High)
+        // Sort active performers by index to keep role assignment stable
+        const activePerformerIndices = performers
+            .map((p, idx) => ({ idx, hasPerformer: p.hasPerformer }))
+            .filter(item => item.hasPerformer)
+            .map(item => item.idx);
+            // .sort((a, b) => a - b) // Indices are naturally sorted if iteration is order-based, but safe to assume.
 
         performers.forEach((p, idx) => {
             const v = this.voices[idx];
@@ -159,53 +177,73 @@ export class AudioSystem {
             const isActive = p.hasPerformer;
 
             if (isActive) {
-                // Determine Role
-                const isBassRole = (activeIdxs.length > 0 && activeIdxs[0] === idx);
+                // Determine Role based on rank in active list
+                const rank = activePerformerIndices.indexOf(idx);
+                // Cycle roles if more than 3 performers (0, 1, 2, 0...)
+                const roleIdx = rank % 3;
+                const ratios = CHORD_RATIOS[roleIdx];
 
-                let targetFreq;
+                // Frequencies
+                const freqA = CONFIG.audio.rootFreq * ratios.a;
+                const freqB = CONFIG.audio.rootFreq * ratios.b;
 
-                if (isBassRole) {
-                    // DRONE D BASS
-                    targetFreq = CONFIG.audio.rootFreq; // D2
+                v.oscA.frequency.setTargetAtTime(freqA, now, 0.1);
+                v.oscB.frequency.setTargetAtTime(freqB, now, 0.1);
 
-                    // Highpass: let lows through
+                // Volume / Balance Control using Tilt (Roll)
+                // Roll is typically -PI/2 to PI/2, but heavily centered.
+                // We clamp it to -0.5 to 0.5 for usable range.
+                // Map to 0..1
+                const roll = THREE.MathUtils.clamp(p.current.roll, -0.6, 0.6);
+                const balance = (roll + 0.6) / 1.2; // 0 (Left) to 1 (Right)
+
+                let gainA, gainB;
+                const masterVol = 0.5 * p.presence;
+
+                if (roleIdx === 0) {
+                    // BASS ROLE (P1)
+                    // Note A (Drone D2) is constant volume (relative to presence)
+                    // Note B (Interval) is manipulated by Height (as requested: "volume of second note")
+                    // Actually, let's use Height for Note B volume to feel like a fader.
+
+                    gainA = masterVol * 0.8; // Drone always on
+
+                    const fader = THREE.MathUtils.clamp(p.triangle.height, 0, 1);
+                    gainB = masterVol * fader * 0.8;
+
+                    // Bass filter: allow lows
                     v.highpass.frequency.setTargetAtTime(10, now, 0.2);
 
-                    // Slightly louder for bass
-                     v.gain.gain.setTargetAtTime(0.6, now, 1.5);
                 } else {
-                    // HARMONY
-                    const ratio = p.noteRatio || 1.0;
-                    // Pitch up one octave
-                    targetFreq = CONFIG.audio.rootFreq * ratio * 2.0;
+                    // MID & HIGH ROLES (P2, P3)
+                    // "Manipulate volume of each note" -> Crossfade/Balance via Roll
 
-                    // Highpass: Cut low end
-                    v.highpass.frequency.setTargetAtTime(300, now, 0.2);
+                    gainA = masterVol * (1.0 - balance);
+                    gainB = masterVol * balance;
 
-                     // Volume for harmony
-                     v.gain.gain.setTargetAtTime(0.4, now, 1.5);
+                    // Mid/High filter: cut lows to clean up mix
+                    v.highpass.frequency.setTargetAtTime(150, now, 0.2);
                 }
 
-                // Apply Frequency with Portamento
-                v.osc1.frequency.setTargetAtTime(targetFreq, now, 0.1);
-                v.osc2.frequency.setTargetAtTime(targetFreq * 1.002, now, 0.1);
+                v.gainA.gain.setTargetAtTime(gainA, now, 0.1);
+                v.gainB.gain.setTargetAtTime(gainB, now, 0.1);
 
-                // We can still use height to modulate the Lowpass filter slightly for expression
-                // User snippet used fixed 8000Hz, but dynamic expression is "Evocative"
-                // Let's keep a bit of filter movement but keep it bright.
-                const minCutoff = 2000;
-                const maxCutoff = 10000;
-                const height = THREE.MathUtils.clamp(p.triangle.height || 0.5, 0, 1);
-                const cutoff = THREE.MathUtils.lerp(minCutoff, maxCutoff, height);
-                v.filter.frequency.setTargetAtTime(cutoff, now, 0.1);
+                // Dynamic Lowpass Filter based on Depth or Area?
+                // "Sharp, buzzing, crisp" -> Keep it open generally.
+                // Maybe modulate slightly with Depth (Area)
+                // Closer (larger area) = Brighter
+                const brightness = THREE.MathUtils.clamp(p.triangle.area * 5.0, 0, 1);
+                const cutoff = THREE.MathUtils.lerp(4000, 12000, brightness);
+                v.filter.frequency.setTargetAtTime(cutoff, now, 0.2);
 
             } else {
                 // Stop / Release
-                v.gain.gain.setTargetAtTime(0, now, 2.0); // Long tail release
+                v.gainA.gain.setTargetAtTime(0, now, 2.0);
+                v.gainB.gain.setTargetAtTime(0, now, 2.0);
             }
         });
 
-        // Master LFO update (optional, keeps the pulse alive)
+        // Master LFO update
         let weighted = 0;
         let totalWeight = 0;
         performers.forEach((p, idx) => {
