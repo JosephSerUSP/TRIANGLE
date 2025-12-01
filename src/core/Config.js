@@ -45,6 +45,16 @@ export const CONFIG = {
         bpmMin: 40,
         bpmMax: 140,
         lfoRateMin: 0.3,
-        lfoRateMax: 8.0
+        lfoRateMax: 8.0,
+        /** Audio mix settings */
+        mix: {
+            master: 0.8,
+            reverb: 0.3,
+            kick: 1.0,
+            bass: 0.6,
+            ostinato: 0.8,
+            arp: 0.2,
+            pad: 0.2
+        }
     }
 };
