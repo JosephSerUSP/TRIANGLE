@@ -238,10 +238,7 @@ export class LatticeViewport {
      * @param {Performer} performer - The state of the performer to render.
      */
     render(renderer, rect, performer) {
-        const { x, y, width, height } = rect;
-        renderer.setViewport(x, y, width, height);
-        renderer.setScissor(x, y, width, height);
-        renderer.setScissorTest(true);
+        const { width, height } = rect;
 
         this.camera.aspect = width / height;
         this.camera.updateProjectionMatrix();
