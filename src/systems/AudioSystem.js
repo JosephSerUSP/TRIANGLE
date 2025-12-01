@@ -2,7 +2,7 @@
 import * as THREE from 'three';
 import { CONFIG } from '../core/Config.js';
 import { CHORD_PROGRESSION, SCALES } from './audio/MusicTheory.js';
-import { PulseBass, StringPad, PluckSynth, ArpSynth } from './audio/Instruments.js';
+import { PulseBass, StringPad, PluckSynth, ArpSynth, KickDrum } from './audio/Instruments.js';
 
 /**
  * Manages audio synthesis for the application.
@@ -39,6 +39,11 @@ export class AudioSystem {
         // Bass pattern (dotted quarter + eighth feel / driving)
         // 1 = root, 2 = fifth
         this.bassPattern = [1, 0, 0, 1, 0, 0, 2, 0, 1, 0, 0, 1, 0, 0, 2, 0];
+
+        // Kick Pattern (4-on-the-floor)
+        this.kickPattern = [1, 0, 0, 0, 1, 0, 0, 0, 1, 0, 0, 0, 1, 0, 0, 0];
+
+        this.kickIntensity = 0.0;
 
         // Ostinato Pattern (Performer B)
         this.ostinatoPattern = [0, 2, 4, 7, 4, 2, 0, 2, 0, 2, 4, 7, 4, 2, 0, 2]; // Scale degrees
@@ -107,6 +112,9 @@ export class AudioSystem {
             primary: new ArpSynth(this.ctx, this.compressor),
             secondary: new StringPad(this.ctx, this.reverb)
         });
+
+        // Kick Drum
+        this.kickDrum = new KickDrum(this.ctx, this.compressor);
 
         // Connect all secondary strings to compressor too for volume control
         this.instruments.forEach(inst => {
@@ -177,6 +185,13 @@ export class AudioSystem {
         const currentChord = this.progression[this.chordIndex];
         const baseFreq = CONFIG.audio.rootFreq;
         const cycleIndex = Math.floor(this.barCounter / 4);
+
+        // --- Kick Drum ---
+        if (this.kickIntensity > 0.001) {
+            if (this.kickPattern[beatNumber]) {
+                this.kickDrum.playNote(time, this.kickIntensity);
+            }
+        }
 
         // --- Performer State Loop ---
         for (let i = 0; i < 3; i++) {
@@ -259,11 +274,10 @@ export class AudioSystem {
                 const padIntervalBars = (channel.status === 'MAIN') ? 2 : 4;
 
                 if (beatNumber === padTriggerBeat && this.barCounter % padIntervalBars === 0) {
-                     const notes = currentChord.notes;
-                     notes.forEach(n => {
-                        const f = baseFreq * 2 * Math.pow(2, n/12);
-                        inst.secondary.playNote(f, time, 4.0, 0.4 * timbre);
-                    });
+                     // Play single note (Root) instead of full chord
+                     const n = currentChord.notes[0];
+                     const f = baseFreq * 2 * Math.pow(2, n/12);
+                     inst.secondary.playNote(f, time, 4.0, 0.4 * timbre);
                 }
             }
 
@@ -334,6 +348,18 @@ export class AudioSystem {
         const now = this.ctx.currentTime;
         const INTRO_DURATION = 8.0; // 8 seconds (approx 4 bars at 120bpm)
         const OUTRO_DURATION = 4.0; // 4 seconds linger
+
+        // Calculate Kick Intensity
+        // Silent < 2
+        // Timid = 2 (0.4)
+        // Pounding = 3 (1.0)
+        const activeCount = this._performerStates.filter(p => p.active).length;
+        let targetKick = 0.0;
+        if (activeCount === 2) targetKick = 0.4;
+        if (activeCount >= 3) targetKick = 1.0;
+
+        // Smooth transition
+        this.kickIntensity += (targetKick - this.kickIntensity) * 0.05;
 
         // State Machine Update
         for (let i = 0; i < 3; i++) {
