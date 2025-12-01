@@ -1,3 +1,5 @@
+import * as THREE from 'three';
+
 export class Synthesizer {
     constructor(ctx, destination) {
         this.ctx = ctx;
@@ -27,6 +29,67 @@ export class Synthesizer {
 
     playNote(freq, time, duration, velocity = 1.0) {
         // To be implemented by subclasses
+    }
+}
+
+export class KickDrum extends Synthesizer {
+    constructor(ctx, destination) {
+        super(ctx, destination);
+        // Kick usually center panned
+        this.panner.pan.value = 0;
+        this.output.gain.value = 1.0;
+    }
+
+    playNote(freq, time, duration, velocity) {
+        const osc = this.ctx.createOscillator();
+        osc.type = 'sine';
+
+        const gain = this.ctx.createGain();
+        osc.connect(gain);
+        gain.connect(this.output);
+
+        // Pitch envelope (The "Thud")
+        // Velocity controls the start frequency and the decay speed somewhat
+        const startFreq = 150 + (velocity * 100);
+        const endFreq = 40;
+        const decay = 0.1 + (velocity * 0.2);
+
+        osc.frequency.setValueAtTime(startFreq, time);
+        osc.frequency.exponentialRampToValueAtTime(endFreq, time + decay);
+
+        // Amplitude envelope
+        gain.gain.setValueAtTime(0, time);
+        gain.gain.linearRampToValueAtTime(velocity, time + 0.005);
+        gain.gain.exponentialRampToValueAtTime(0.001, time + decay + 0.1);
+
+        osc.start(time);
+        osc.stop(time + decay + 0.2);
+
+        // Click / Beater noise (only if velocity is high)
+        if (velocity > 0.6) {
+             const noise = this.ctx.createBufferSource();
+             const bufferSize = this.ctx.sampleRate * 0.05;
+             const buffer = this.ctx.createBuffer(1, bufferSize, this.ctx.sampleRate);
+             const data = buffer.getChannelData(0);
+             for (let i = 0; i < bufferSize; i++) {
+                 data[i] = (Math.random() * 2 - 1) * velocity;
+             }
+             noise.buffer = buffer;
+
+             const noiseFilter = this.ctx.createBiquadFilter();
+             noiseFilter.type = 'bandpass';
+             noiseFilter.frequency.value = 2000;
+
+             const noiseGain = this.ctx.createGain();
+             noiseGain.gain.setValueAtTime(velocity * 0.3, time);
+             noiseGain.gain.exponentialRampToValueAtTime(0.01, time + 0.02);
+
+             noise.connect(noiseFilter);
+             noiseFilter.connect(noiseGain);
+             noiseGain.connect(this.output);
+
+             noise.start(time);
+        }
     }
 }
 
@@ -85,8 +148,8 @@ export class PulseBass extends Synthesizer {
 export class StringPad extends Synthesizer {
     constructor(ctx, destination) {
         super(ctx, destination);
-        // Increased gain from 0.4 to 0.8
-        this.output.gain.value = 0.8;
+        // Increased gain from 0.4/0.8 to 1.5 to satisfy "too low on the mix"
+        this.output.gain.value = 1.5;
 
         this.filter = ctx.createBiquadFilter();
         this.filter.type = 'lowpass';
@@ -127,10 +190,12 @@ export class StringPad extends Synthesizer {
         osc1.start(time);
         osc2.start(time);
 
+        // Increased base velocity scaling
+        const scaledVelocity = velocity * 1.2;
+
         gain.gain.setValueAtTime(0, time);
-        // Increased velocity scalar from 0.3 to 0.6
-        gain.gain.linearRampToValueAtTime(velocity * 0.6, time + attack);
-        gain.gain.setValueAtTime(velocity * 0.6, time + duration);
+        gain.gain.linearRampToValueAtTime(scaledVelocity, time + attack);
+        gain.gain.setValueAtTime(scaledVelocity, time + duration);
         gain.gain.linearRampToValueAtTime(0, time + duration + release);
 
         osc1.stop(time + duration + release);

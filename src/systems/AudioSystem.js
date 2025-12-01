@@ -2,7 +2,7 @@
 import * as THREE from 'three';
 import { CONFIG } from '../core/Config.js';
 import { CHORD_PROGRESSION, SCALES } from './audio/MusicTheory.js';
-import { PulseBass, StringPad, PluckSynth, ArpSynth } from './audio/Instruments.js';
+import { PulseBass, StringPad, PluckSynth, ArpSynth, KickDrum } from './audio/Instruments.js';
 
 /**
  * Manages audio synthesis for the application.
@@ -19,6 +19,7 @@ export class AudioSystem {
 
         // Performers' instruments: Array of { inst1, inst2 }
         this.instruments = [];
+        this.kick = null;
 
         // Sequencer State
         this.isPlaying = false;
@@ -42,6 +43,11 @@ export class AudioSystem {
 
         // Ostinato Pattern (Performer B)
         this.ostinatoPattern = [0, 2, 4, 7, 4, 2, 0, 2, 0, 2, 4, 7, 4, 2, 0, 2]; // Scale degrees
+
+        // Kick drum heat state (0.0 to 1.0)
+        this.kickHeat = 0.0;
+        this.kickState = 'SILENT'; // SILENT, TIMID, BUILDING, POUNDING
+        this.activePerformerCount = 0;
 
         // Channel state tracking for Intro/Outro logic
         // Status: 'SILENT', 'INTRO', 'MAIN', 'OUTRO'
@@ -107,6 +113,9 @@ export class AudioSystem {
             primary: new ArpSynth(this.ctx, this.compressor),
             secondary: new StringPad(this.ctx, this.reverb)
         });
+
+        // Initialize Kick
+        this.kick = new KickDrum(this.ctx, this.compressor);
 
         // Connect all secondary strings to compressor too for volume control
         this.instruments.forEach(inst => {
@@ -178,6 +187,23 @@ export class AudioSystem {
         const baseFreq = CONFIG.audio.rootFreq;
         const cycleIndex = Math.floor(this.barCounter / 4);
 
+        // --- Kick Drum Logic ---
+        if (this.kickHeat > 0.01) {
+            // 4-on-the-floor kick pattern
+            if (beatNumber % 4 === 0) {
+                // Modulate kick based on heat
+                // Low heat: Timid (lower velocity, no click)
+                // High heat: Pounding (high velocity, click)
+
+                // Curve the velocity response
+                const kickVel = 0.3 + (this.kickHeat * 0.7);
+                // "Timid" kick might pitch down slightly less punchy
+
+                this.kick.playNote(50, time, 0.2, kickVel);
+            }
+        }
+
+
         // --- Performer State Loop ---
         for (let i = 0; i < 3; i++) {
             if (!this._performerStates || !this._performerStates[i]) continue;
@@ -185,6 +211,17 @@ export class AudioSystem {
             const pState = this._performerStates[i];
             const channel = this.channelStates[i];
             const inst = this.instruments[i];
+
+            // Calculate Evolution Factor based on time active
+            // Ramps from 0 to 1 over 30 seconds
+            let evolution = 0.0;
+            if (channel.status === 'MAIN' || channel.status === 'INTRO') {
+                const activeTime = time - channel.startTime;
+                evolution = THREE.MathUtils.clamp(activeTime / 30.0, 0.0, 1.0);
+            }
+            if (channel.status === 'OUTRO') {
+                evolution = 0.0;
+            }
 
             // Modulation (Timbre/Pan)
             // If OUTRO, lower timbre/cutoff
@@ -208,24 +245,31 @@ export class AudioSystem {
                 // Bass Variation Logic
                 let bassNoteToPlay = null;
 
-                // INTRO: Only downbeat (Beat 0)
+                // INTRO: Sparse
                 if (channel.status === 'INTRO') {
-                    if (beatNumber === 0) bassNoteToPlay = 1; // Root
+                     if (beatNumber === 0) bassNoteToPlay = 1; // Root
                 }
-                // OUTRO: Sparse, maybe just root on downbeat or every 2 beats
+                // OUTRO: Sparse
                 else if (channel.status === 'OUTRO') {
                     if (beatNumber === 0 || beatNumber === 8) bassNoteToPlay = 1;
                 }
-                // MAIN: Full pattern + Variations
+                // MAIN: Evolves with time
                 else {
                     // Check for forced driving expression
-                    if (pState.expression > 0.8) {
-                        // Driving 8th notes
+                    if (pState.expression > 0.8 && evolution > 0.8) {
+                        // Driving 8th notes only when evolved and expressive
                          if (beatNumber % 2 === 0) bassNoteToPlay = 1;
                     } else {
-                        // Standard Pattern
+                        // Standard Pattern, but only play busy parts if evolved
                         const step = this.bassPattern[beatNumber];
-                        if (step > 0) bassNoteToPlay = step;
+                        if (step > 0) {
+                            // If it's a "busy" beat (not 0, 4, 8, 12), check evolution
+                            if (beatNumber % 4 !== 0) {
+                                if (Math.random() < evolution) bassNoteToPlay = step;
+                            } else {
+                                bassNoteToPlay = step;
+                            }
+                        }
                     }
                 }
 
@@ -262,7 +306,8 @@ export class AudioSystem {
                      const notes = currentChord.notes;
                      notes.forEach(n => {
                         const f = baseFreq * 2 * Math.pow(2, n/12);
-                        inst.secondary.playNote(f, time, 4.0, 0.4 * timbre);
+                        // String volume increased in class, here we ensure timbre allows it through
+                        inst.secondary.playNote(f, time, 4.0, 0.5 + 0.5 * timbre);
                     });
                 }
             }
@@ -270,11 +315,17 @@ export class AudioSystem {
             // Performer B: Ostinato + String
             else if (i === 1) {
                 const scaleIndex = this.ostinatoPattern[beatNumber];
-                // Density based on state
-                let density = 0.5;
-                if (channel.status === 'INTRO') density = 0.2;
+
+                // Density based on state AND evolution
+                let density = 0.0;
+                if (channel.status === 'INTRO') density = 0.1; // Very sparse start
                 if (channel.status === 'OUTRO') density = 0.1;
-                if (channel.status === 'MAIN') density = 0.2 + pState.expression * 0.8;
+                if (channel.status === 'MAIN') {
+                     // Ramps from 0.2 to 0.8 based on evolution
+                     density = 0.2 + (evolution * 0.6);
+                     // Expression adds on top
+                     density += pState.expression * 0.2;
+                }
 
                 if (scaleIndex !== undefined && Math.random() < density) {
                     const noteIndex = scaleIndex % currentChord.notes.length;
@@ -288,16 +339,20 @@ export class AudioSystem {
                 if (beatNumber === 0 && this.barCounter % 2 === 0) {
                      const n = currentChord.notes[2];
                      const f = baseFreq * 4 * Math.pow(2, n/12);
-                     inst.secondary.playNote(f, time, 4.0, 0.3 * timbre);
+                     inst.secondary.playNote(f, time, 4.0, 0.5 + 0.4 * timbre);
                 }
             }
 
             // Performer C: Arpeggio + String
             else if (i === 2) {
-                 let density = 0.5;
-                if (channel.status === 'INTRO') density = 0.1;
+                 let density = 0.0;
+                if (channel.status === 'INTRO') density = 0.05;
                 if (channel.status === 'OUTRO') density = 0.05;
-                if (channel.status === 'MAIN') density = 0.1 + pState.expression * 0.9;
+                if (channel.status === 'MAIN') {
+                    // Gradual build up
+                    density = 0.1 + (evolution * 0.7);
+                    density += pState.expression * 0.2;
+                }
 
                 if (Math.random() < density) {
                     const arpIndex = beatNumber % currentChord.notes.length;
@@ -311,7 +366,7 @@ export class AudioSystem {
                  if (beatNumber === 8 && this.barCounter % 2 === 0) {
                      const n = currentChord.notes[1];
                      const f = baseFreq * 2 * Math.pow(2, n/12);
-                     inst.secondary.playNote(f, time, 4.0, 0.3 * timbre);
+                     inst.secondary.playNote(f, time, 4.0, 0.5 + 0.4 * timbre);
                 }
             }
         }
@@ -332,8 +387,10 @@ export class AudioSystem {
         }));
 
         const now = this.ctx.currentTime;
-        const INTRO_DURATION = 8.0; // 8 seconds (approx 4 bars at 120bpm)
+        const INTRO_DURATION = 16.0; // Slowed down from 8.0 for more gradual entry
         const OUTRO_DURATION = 4.0; // 4 seconds linger
+
+        let activeCount = 0;
 
         // State Machine Update
         for (let i = 0; i < 3; i++) {
@@ -341,6 +398,7 @@ export class AudioSystem {
             const channel = this.channelStates[i];
 
             if (p.active) {
+                activeCount++;
                 // If previously silent or outro, start Intro
                 if (channel.status === 'SILENT' || channel.status === 'OUTRO') {
                     channel.status = 'INTRO';
@@ -368,5 +426,43 @@ export class AudioSystem {
                 }
             }
         }
+
+        this.activePerformerCount = activeCount;
+
+        // --- Kick Heat Update ---
+        const targetHeat = this._calculateTargetKickHeat(activeCount);
+
+        // Move current heat towards target heat slowly
+        // If we are building up (3 performers), we want it slow (e.g. over 10-15 seconds)
+        // If we are dropping (2 or less), we might want it faster or immediate.
+
+        const dt = 1.0 / 60.0; // Approx frame time
+        let heatRate = 0.05 * dt; // Slow default
+
+        if (activeCount >= 3) {
+            // "After some time, it becomes a truly exciting, pounding kick"
+            // Let's make it take ~20 seconds to go from 0.3 (timid) to 1.0 (pounding)
+            // 0.7 diff / 20s = 0.035 per sec
+            heatRate = 0.035 * dt;
+        } else if (activeCount === 2) {
+            // Decaying down to timid or building up to timid
+            heatRate = 0.1 * dt;
+        } else {
+            // Rapid decay
+            heatRate = 0.5 * dt;
+        }
+
+        if (this.kickHeat < targetHeat) {
+            this.kickHeat = Math.min(this.kickHeat + heatRate, targetHeat);
+        } else if (this.kickHeat > targetHeat) {
+            this.kickHeat = Math.max(this.kickHeat - heatRate, targetHeat);
+        }
+    }
+
+    _calculateTargetKickHeat(count) {
+        if (count < 2) return 0.0;
+        if (count === 2) return 0.3; // Timid
+        if (count >= 3) return 1.0; // Pounding
+        return 0.0;
     }
 }
