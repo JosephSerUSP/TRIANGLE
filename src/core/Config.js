@@ -52,9 +52,9 @@ export const CONFIG = {
             reverb: 0.3,
             kick: 1.0,
             bass: 0.6,
-            ostinato: 0.5,
-            arp: 0.4,
-            pad: 0.6
+            ostinato: 0.8,
+            arp: 0.2,
+            pad: 0.2
         }
     }
 };
