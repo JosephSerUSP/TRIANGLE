@@ -265,16 +265,44 @@ export class App {
         const autoData = this.autopilot.update();
 
         // --- 2. Update Performer State ---
-        // Physical Performer (P0) looks at Vision Data
-        this.performers[0].updateFromPose(poses);
+        if (CONFIG.enableAutopilot) {
+            // Original behavior: P0 is physical (dominant), P1 & P2 are virtual
+            this.performers[0].updateFromPose(poses);
 
-        // Virtual Performers (P1, P2) look at Autopilot Data
-        // autoData is a Map<index, data>
-        autoData.forEach((data, idx) => {
-             if (this.performers[idx]) {
-                 this.performers[idx].updateFromVirtualData(data);
-             }
-        });
+            // Virtual Performers (P1, P2) look at Autopilot Data
+            autoData.forEach((data, idx) => {
+                 if (this.performers[idx]) {
+                     this.performers[idx].updateFromVirtualData(data);
+                 }
+            });
+        } else {
+            // Manual behavior: All performers are physical if data exists
+            // Sort poses by x-coordinate to consistently assign to Left, Center, Right
+            // We need to ensure we have a stable sort.
+            // Poses usually contain a bounding box or keypoints. MoveNet poses have keypoints.
+            // We'll estimate Center X from shoulders.
+
+            const sortedPoses = [...poses].sort((a, b) => {
+                const getX = (p) => {
+                    const ls = p.keypoints.find(k => k.name === 'left_shoulder');
+                    const rs = p.keypoints.find(k => k.name === 'right_shoulder');
+                    if (ls && rs) return (ls.x + rs.x) / 2;
+                    // Fallback to first keypoint or 0
+                    return p.keypoints[0] ? p.keypoints[0].x : 0;
+                };
+                return getX(a) - getX(b); // Ascending X (Left to Right)
+            });
+
+            // Assign sorted poses to performers [0, 1, 2]
+            for (let i = 0; i < this.performers.length; i++) {
+                if (i < sortedPoses.length) {
+                    this.performers[i].updateFromSinglePose(sortedPoses[i]);
+                } else {
+                    // No pose for this performer
+                    this.performers[i].updateFromSinglePose(null);
+                }
+            }
+        }
 
         // Update Physics (Smoothing)
         this.performers.forEach(p => p.updatePhysics());

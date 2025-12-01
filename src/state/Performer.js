@@ -98,7 +98,17 @@ export class Performer {
      * @param {Array} poses - The array of poses from VisionSystem.
      */
     updateFromPose(poses) {
-        if (this.isVirtual) return;
+        // If we are virtual but acting as physical (e.g. Autopilot disabled), we allow this.
+        // Ideally we should update isVirtual flag or ignore it.
+        // For now, let's respect isVirtual strictly, but the App might call this on virtual performers if we change App logic.
+        // Actually, App logic changes performers[1] to be "physical-capable" if autopilot is off?
+        // Or we just allow updateFromPose to run regardless, but usually it wasn't called.
+        // The original code had: if (this.isVirtual) return;
+        // If we want P1/P2 to be physical when autopilot is off, we must allow this method to run.
+
+        // But wait, the Performer constructor sets isVirtual.
+        // If we want dynamic behavior, we should check a passed flag or rely on App to call the right method.
+        // I will remove the strict isVirtual check here and rely on the caller.
 
         const vW = CONFIG.camera.width;
         const vH = CONFIG.camera.height;
@@ -130,8 +140,37 @@ export class Performer {
             return;
         }
 
+        // Use the new single pose method
+        this.updateFromSinglePose(dominant.pose);
+    }
+
+    /**
+     * Updates the performer state based on a single Physical Input Pose.
+     * @param {Object} pose - A single pose object from VisionSystem.
+     */
+    updateFromSinglePose(pose) {
+        const vW = CONFIG.camera.width;
+        const vH = CONFIG.camera.height;
+
+        if (!pose) {
+            this.hasPerformer = false;
+            this._resetTarget();
+            return;
+        }
+
+        const ls = pose.keypoints.find(k => k.name === 'left_shoulder');
+        const rs = pose.keypoints.find(k => k.name === 'right_shoulder');
+
+        // Basic validation again just in case, though usually pre-filtered
+        if (!ls || !rs || ls.score <= 0.3 || rs.score <= 0.3) {
+             this.hasPerformer = false;
+             this._resetTarget();
+             return;
+        }
+
+        const width = Math.hypot(rs.x - ls.x, rs.y - ls.y);
+
         this.hasPerformer = true;
-        const { pose, width, ls, rs } = dominant;
 
         // --- Calculate Physics ---
 

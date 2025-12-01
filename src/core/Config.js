@@ -17,6 +17,8 @@ export const CONFIG = {
     depthSmoothing: 0.05,
     /** Enable or disable debug mode */
     debug: false,
+    /** Enable or disable Autopilot system */
+    enableAutopilot: true,
     /**
      * View mode:
      * 0: Lattice Only
