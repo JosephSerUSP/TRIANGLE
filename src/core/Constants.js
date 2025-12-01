@@ -7,13 +7,13 @@
  * @type {number[]}
  */
 export const BEAUTIFUL_INTERVALS = [
-    1.0,    // Unison
-    1.25,   // Major 3rd
-    1.5,    // Perfect 5th
-    1.875,  // Major 7th
-    2.25,   // Major 9th
-    2.8125, // #11
-    3.0     // 2 oct + 5th
+    2.25,   // Major 9th (E)
+    1.5,    // Perfect 5th (A)
+    3.0,    // Perfect 5th octave up (A)
+    1.875,  // Major 7th (C#)
+    3.75,   // Major 7th octave up
+    2.8125, // #11 (G#)
+    1.25    // Major 3rd (F#)
 ];
 
 /**

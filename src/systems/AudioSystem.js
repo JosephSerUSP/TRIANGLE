@@ -63,7 +63,8 @@ export class AudioSystem {
 
         this.voices = [];
         for (let i = 0; i < voiceCount; i++) {
-            const v = this._createVoice(i === 0); // voice 0 = bass
+            const v = this._createVoice();
+            // Connect the end of the voice chain (filter) to master
             v.filter.connect(this.masterPulse);
             this.voices.push(v);
         }
@@ -74,35 +75,50 @@ export class AudioSystem {
     /**
      * Creates a single audio voice (synthesizer).
      * @private
-     * @param {boolean} isBass - Whether this voice is a bass voice.
      * @returns {Object} The voice object containing oscillators and filters.
      */
-    _createVoice(isBass) {
+    _createVoice() {
         const v = {};
-        v.isBass = isBass;
+
+        // Oscillators
         v.osc1 = this.ctx.createOscillator();
         v.osc2 = this.ctx.createOscillator();
-        v.gain = this.ctx.createGain();
-        v.filter = this.ctx.createBiquadFilter();
 
+        // Gain (VCA)
+        v.gain = this.ctx.createGain();
+
+        // Filters
+        v.highpass = this.ctx.createBiquadFilter();
+        v.filter = this.ctx.createBiquadFilter(); // Lowpass
+
+        // Configuration
         v.osc1.type = 'sawtooth';
-        v.osc2.type = isBass ? 'sine' : 'triangle';
+        v.osc2.type = 'triangle';
 
         v.osc1.frequency.value = CONFIG.audio.rootFreq;
         v.osc2.frequency.value = CONFIG.audio.rootFreq;
 
-        v.osc1.detune.value = CONFIG.audio.detune;
-        v.osc2.detune.value = -CONFIG.audio.detune;
+        v.osc1.detune.value = 0;
+        v.osc2.detune.value = 4; // Slight detune as requested
 
         v.gain.gain.value = 0.0;
 
+        // Highpass Setup
+        v.highpass.type = 'highpass';
+        v.highpass.frequency.value = 10; // Default to bypass (low)
+        v.highpass.Q.value = 0.7;
+
+        // Lowpass Setup
         v.filter.type = 'lowpass';
         v.filter.Q.value = 1.0;
-        v.filter.frequency.value = 400;
+        v.filter.frequency.value = 8000; // Fixed High Brightness from snippet
 
+        // Routing: Osc -> Gain -> Highpass -> Lowpass -> Out
         v.osc1.connect(v.gain);
         v.osc2.connect(v.gain);
-        v.gain.connect(v.filter);
+
+        v.gain.connect(v.highpass);
+        v.highpass.connect(v.filter);
 
         v.osc1.start();
         v.osc2.start();
@@ -129,44 +145,77 @@ export class AudioSystem {
         if (!this.isReady) return;
         const now = this.ctx.currentTime;
 
-        // Per-voice mapping
+        // Determine active indices to assign roles
+        // Logic: Lowest active index = Bass, others = Harmony
+        const activeIdxs = [];
+        performers.forEach((p, i) => {
+            if (p.hasPerformer) activeIdxs.push(i);
+        });
+
         performers.forEach((p, idx) => {
             const v = this.voices[idx];
             if (!v) return;
 
-            const has = p.hasPerformer;
-            const area = p.triangle.area;
-            const height = THREE.MathUtils.clamp(p.triangle.height, 0, 1);
-            const ratio = p.noteRatio || 1.0;
+            const isActive = p.hasPerformer;
 
-            let freq = CONFIG.audio.rootFreq * ratio;
-            if (v.isBass) freq *= 0.5; // one octave down for bass
+            if (isActive) {
+                // Determine Role
+                const isBassRole = (activeIdxs.length > 0 && activeIdxs[0] === idx);
 
-            v.osc1.frequency.setTargetAtTime(freq, now, 0.1);
-            v.osc2.frequency.setTargetAtTime(freq, now, 0.1);
+                let targetFreq;
 
-            const cutoff = THREE.MathUtils.lerp(CONFIG.audio.filterMin, CONFIG.audio.filterMax, height);
-            v.filter.frequency.setTargetAtTime(cutoff, now, 0.1);
+                if (isBassRole) {
+                    // DRONE D BASS
+                    targetFreq = CONFIG.audio.rootFreq; // D2
 
-            let targetGain = has ? (0.12 + area * 2.4) : 0.0;
-            targetGain = THREE.MathUtils.clamp(targetGain, 0, v.isBass ? 0.9 : 0.6);
+                    // Highpass: let lows through
+                    v.highpass.frequency.setTargetAtTime(10, now, 0.2);
 
-            const timeConst = has ? 0.3 : 1.8;
-            v.gain.gain.setTargetAtTime(targetGain, now, timeConst);
+                    // Slightly louder for bass
+                     v.gain.gain.setTargetAtTime(0.6, now, 1.5);
+                } else {
+                    // HARMONY
+                    const ratio = p.noteRatio || 1.0;
+                    // Pitch up one octave
+                    targetFreq = CONFIG.audio.rootFreq * ratio * 2.0;
+
+                    // Highpass: Cut low end
+                    v.highpass.frequency.setTargetAtTime(300, now, 0.2);
+
+                     // Volume for harmony
+                     v.gain.gain.setTargetAtTime(0.4, now, 1.5);
+                }
+
+                // Apply Frequency with Portamento
+                v.osc1.frequency.setTargetAtTime(targetFreq, now, 0.1);
+                v.osc2.frequency.setTargetAtTime(targetFreq * 1.002, now, 0.1);
+
+                // We can still use height to modulate the Lowpass filter slightly for expression
+                // User snippet used fixed 8000Hz, but dynamic expression is "Evocative"
+                // Let's keep a bit of filter movement but keep it bright.
+                const minCutoff = 2000;
+                const maxCutoff = 10000;
+                const height = THREE.MathUtils.clamp(p.triangle.height || 0.5, 0, 1);
+                const cutoff = THREE.MathUtils.lerp(minCutoff, maxCutoff, height);
+                v.filter.frequency.setTargetAtTime(cutoff, now, 0.1);
+
+            } else {
+                // Stop / Release
+                v.gain.gain.setTargetAtTime(0, now, 2.0); // Long tail release
+            }
         });
 
-        // Ensemble BPM -> master LFO rate
+        // Master LFO update (optional, keeps the pulse alive)
         let weighted = 0;
         let totalWeight = 0;
         performers.forEach((p, idx) => {
             if (!p.hasPerformer) return;
-            const weight = idx === 0 ? 2 : 1; // physical performer slightly heavier
+            const weight = 1;
             weighted += p.current.bpmPref * weight;
             totalWeight += weight;
         });
-
         const bpm = totalWeight > 0 ? weighted / totalWeight : 60;
-        let pulseHz = (bpm / 60) * 0.5; // pulse roughly every 2 beats
+        let pulseHz = (bpm / 60) * 0.5;
         pulseHz = THREE.MathUtils.clamp(pulseHz, CONFIG.audio.lfoRateMin, CONFIG.audio.lfoRateMax);
         this.lfo.frequency.setTargetAtTime(pulseHz, now, 0.3);
     }
