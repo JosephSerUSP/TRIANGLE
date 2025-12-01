@@ -2,6 +2,42 @@
 import * as THREE from 'three';
 import { CONFIG } from '../core/Config.js';
 
+// --- Musical Constants ---
+// Abstract degrees relative to D:
+const DEG = {
+  '1': 0,   // D
+  '2': 2,   // E
+  '4': 5,   // G
+  '5': 7,   // A
+  '6': 9,   // B
+  'b7': 10, // C
+  '7': 11,  // C#
+};
+
+const MODES = {
+  OPEN: 0,
+  LONGING: 1,
+  LUMINOUS: 2,
+};
+
+const NOTE_PAIRS = {
+  BASS: {
+    [MODES.OPEN]:    ['1', '5'],   // D + A
+    [MODES.LONGING]: ['1', 'b7'],  // D + C
+    [MODES.LUMINOUS]:['1', '7'],   // D + C#
+  },
+  MID: {
+    [MODES.OPEN]:    ['4', '2'],   // G, E
+    [MODES.LONGING]: ['2', '6'],   // E, B
+    [MODES.LUMINOUS]:['4', '6'],   // G, B
+  },
+  HIGH: {
+    [MODES.OPEN]:    ['5', '7'],   // A, C#
+    [MODES.LONGING]: ['b7','7'],   // C, C#
+    [MODES.LUMINOUS]:['6', '7'],   // B, C#
+  }
+};
+
 /**
  * Manages audio synthesis for the application.
  * Uses the Web Audio API to create voices and effects.
@@ -21,6 +57,11 @@ export class AudioSystem {
         this.lfoGain = null;
 
         this.voices = [];
+
+        // Harmonic State
+        this.currentMode = MODES.OPEN;
+        this.lastModeChangeTime = 0;
+        this.modeCycleDuration = 15; // Seconds per mode
     }
 
     /**
@@ -46,16 +87,18 @@ export class AudioSystem {
         this.masterGain = this.ctx.createGain();
         this.masterGain.gain.value = 0.8;
 
+        // Routing: MasterPulse -> MasterGain -> Compressor -> Out
         this.masterPulse.connect(this.masterGain);
         this.masterGain.connect(this.compressor);
         this.compressor.connect(this.ctx.destination);
 
+        // LFO for subtle pulse (keep alive)
         this.lfo = this.ctx.createOscillator();
         this.lfo.type = 'sine';
         this.lfo.frequency.value = 0.5;
 
         this.lfoGain = this.ctx.createGain();
-        this.lfoGain.gain.value = 0.4;
+        this.lfoGain.gain.value = 0.2; // Reduced LFO depth slightly
 
         this.lfo.connect(this.lfoGain);
         this.lfoGain.connect(this.masterPulse.gain);
@@ -73,55 +116,61 @@ export class AudioSystem {
     }
 
     /**
-     * Creates a single audio voice (synthesizer).
+     * Creates a single audio voice (synthesizer) with two independent signal paths.
      * @private
      * @returns {Object} The voice object containing oscillators and filters.
      */
     _createVoice() {
         const v = {};
 
-        // Oscillators
-        v.osc1 = this.ctx.createOscillator();
-        v.osc2 = this.ctx.createOscillator();
+        // Signal Path A
+        v.oscA = this.ctx.createOscillator();
+        v.gainA = this.ctx.createGain();
 
-        // Gain (VCA)
-        v.gain = this.ctx.createGain();
+        // Signal Path B
+        v.oscB = this.ctx.createOscillator();
+        v.gainB = this.ctx.createGain();
 
-        // Filters
+        // Filters (Shared per Performer)
         v.highpass = this.ctx.createBiquadFilter();
         v.filter = this.ctx.createBiquadFilter(); // Lowpass
 
         // Configuration
-        v.osc1.type = 'sawtooth';
-        v.osc2.type = 'triangle';
+        // Digital Strings: Sawtooths with slight detune
+        v.oscA.type = 'sawtooth';
+        v.oscB.type = 'sawtooth';
 
-        v.osc1.frequency.value = CONFIG.audio.rootFreq;
-        v.osc2.frequency.value = CONFIG.audio.rootFreq;
+        v.oscA.frequency.value = CONFIG.audio.rootFreq;
+        v.oscB.frequency.value = CONFIG.audio.rootFreq;
 
-        v.osc1.detune.value = 0;
-        v.osc2.detune.value = 4; // Slight detune as requested
+        // Detune for chorus effect
+        v.oscA.detune.value = -3;
+        v.oscB.detune.value = 3;
 
-        v.gain.gain.value = 0.0;
+        v.gainA.gain.value = 0.0;
+        v.gainB.gain.value = 0.0;
 
         // Highpass Setup
         v.highpass.type = 'highpass';
-        v.highpass.frequency.value = 10; // Default to bypass (low)
+        v.highpass.frequency.value = 100; // Cut rumble
         v.highpass.Q.value = 0.7;
 
         // Lowpass Setup
         v.filter.type = 'lowpass';
         v.filter.Q.value = 1.0;
-        v.filter.frequency.value = 8000; // Fixed High Brightness from snippet
+        v.filter.frequency.value = 8000;
 
         // Routing: Osc -> Gain -> Highpass -> Lowpass -> Out
-        v.osc1.connect(v.gain);
-        v.osc2.connect(v.gain);
+        v.oscA.connect(v.gainA);
+        v.oscB.connect(v.gainB);
 
-        v.gain.connect(v.highpass);
+        v.gainA.connect(v.highpass);
+        v.gainB.connect(v.highpass);
+
         v.highpass.connect(v.filter);
 
-        v.osc1.start();
-        v.osc2.start();
+        v.oscA.start();
+        v.oscB.start();
 
         return v;
     }
@@ -138,85 +187,123 @@ export class AudioSystem {
 
     /**
      * Updates audio parameters based on the state of all performers.
-     * Modifies frequency, filter cutoff, and gain.
+     * Implements the Hamauzu-inspired harmonic algorithm.
      * @param {Performer[]} performers - Array of performer states.
      */
     update(performers) {
         if (!this.isReady) return;
         const now = this.ctx.currentTime;
 
-        // Determine active indices to assign roles
-        // Logic: Lowest active index = Bass, others = Harmony
-        const activeIdxs = [];
-        performers.forEach((p, i) => {
-            if (p.hasPerformer) activeIdxs.push(i);
-        });
+        // 1. Update Global Mode (Cycle)
+        if (now - this.lastModeChangeTime > this.modeCycleDuration) {
+            this.currentMode = (this.currentMode + 1) % 3;
+            this.lastModeChangeTime = now;
+            // console.log(`Switched to Harmonic Mode: ${this.currentMode}`);
+        }
 
+        // 2. Update Voices
         performers.forEach((p, idx) => {
             const v = this.voices[idx];
             if (!v) return;
 
-            const isActive = p.hasPerformer;
+            if (p.hasPerformer) {
+                // Determine Role & Notes
+                let role = 'MID';
+                let octaveOffsetA = 0;
+                let octaveOffsetB = 0;
 
-            if (isActive) {
-                // Determine Role
-                const isBassRole = (activeIdxs.length > 0 && activeIdxs[0] === idx);
-
-                let targetFreq;
-
-                if (isBassRole) {
-                    // DRONE D BASS
-                    targetFreq = CONFIG.audio.rootFreq; // D2
-
-                    // Highpass: let lows through
-                    v.highpass.frequency.setTargetAtTime(10, now, 0.2);
-
-                    // Slightly louder for bass
-                     v.gain.gain.setTargetAtTime(0.6, now, 1.5);
-                } else {
-                    // HARMONY
-                    const ratio = p.noteRatio || 1.0;
-                    // Pitch up one octave
-                    targetFreq = CONFIG.audio.rootFreq * ratio * 2.0;
-
-                    // Highpass: Cut low end
-                    v.highpass.frequency.setTargetAtTime(300, now, 0.2);
-
-                     // Volume for harmony
-                     v.gain.gain.setTargetAtTime(0.4, now, 1.5);
+                // Index 0: Bass (D2 base)
+                if (idx === 0) {
+                    role = 'BASS';
+                    octaveOffsetA = 0; // D2 range
+                    octaveOffsetB = 0;
+                }
+                // Index 1: Mid (D3 base)
+                else if (idx === 1) {
+                    role = 'MID';
+                    octaveOffsetA = 1; // D3 range
+                    octaveOffsetB = 1;
+                }
+                // Index 2: High (D4 base)
+                else {
+                    role = 'HIGH';
+                    octaveOffsetA = 2; // D4 range
+                    octaveOffsetB = 3; // Shift B up more for sparkle
                 }
 
-                // Apply Frequency with Portamento
-                v.osc1.frequency.setTargetAtTime(targetFreq, now, 0.1);
-                v.osc2.frequency.setTargetAtTime(targetFreq * 1.002, now, 0.1);
+                // Get Note Degrees
+                const pair = NOTE_PAIRS[role][this.currentMode];
+                const degA = pair[0];
+                const degB = pair[1];
 
-                // We can still use height to modulate the Lowpass filter slightly for expression
-                // User snippet used fixed 8000Hz, but dynamic expression is "Evocative"
-                // Let's keep a bit of filter movement but keep it bright.
+                // Calculate Frequencies
+                const freqA = this._degreeToFreq(degA, octaveOffsetA);
+                const freqB = this._degreeToFreq(degB, octaveOffsetB);
+
+                // Apply Frequency
+                v.oscA.frequency.setTargetAtTime(freqA, now, 0.1);
+                v.oscB.frequency.setTargetAtTime(freqB, now, 0.1);
+
+                // Calculate Gains based on Performance
+                // Use triangle.roll (tilt) or skew to balance between A and B
+                // Range assumed -0.5 to 0.5 roughly, map to 0..1
+                let balance = 0.5;
+                if (p.current && p.current.roll !== undefined) {
+                     // Map roll [-0.5, 0.5] -> [0, 1]
+                     balance = THREE.MathUtils.clamp((p.current.roll + 0.5), 0, 1);
+                }
+
+                const baseGain = 0.5; // Nominal volume per voice
+
+                if (role === 'BASS') {
+                    // Bass: D (Note A) is constant drone. X (Note B) is dynamic.
+                    v.gainA.gain.setTargetAtTime(baseGain * 0.8, now, 0.1); // Steady drone
+
+                    // Note B depends on balance/height/energy
+                    // Let's use 'balance' to control volume of B
+                    const gainB = baseGain * balance;
+                    v.gainB.gain.setTargetAtTime(gainB, now, 0.1);
+                } else {
+                    // Others: Crossfade A <-> B
+                    // gainA = (1 - t)
+                    // gainB = t
+                    const gainA = baseGain * (1.0 - balance);
+                    const gainB = baseGain * balance;
+
+                    v.gainA.gain.setTargetAtTime(gainA, now, 0.1);
+                    v.gainB.gain.setTargetAtTime(gainB, now, 0.1);
+                }
+
+                // Filter Expression
+                // Use height (0..1) to open filter
+                const height = p.triangle && p.triangle.height ? p.triangle.height : 0.5;
                 const minCutoff = 2000;
                 const maxCutoff = 10000;
-                const height = THREE.MathUtils.clamp(p.triangle.height || 0.5, 0, 1);
                 const cutoff = THREE.MathUtils.lerp(minCutoff, maxCutoff, height);
                 v.filter.frequency.setTargetAtTime(cutoff, now, 0.1);
 
             } else {
-                // Stop / Release
-                v.gain.gain.setTargetAtTime(0, now, 2.0); // Long tail release
+                // Release
+                v.gainA.gain.setTargetAtTime(0, now, 1.0);
+                v.gainB.gain.setTargetAtTime(0, now, 1.0);
             }
         });
 
-        // Master LFO update (optional, keeps the pulse alive)
-        let weighted = 0;
-        let totalWeight = 0;
-        performers.forEach((p, idx) => {
-            if (!p.hasPerformer) return;
-            const weight = 1;
-            weighted += p.current.bpmPref * weight;
-            totalWeight += weight;
-        });
-        const bpm = totalWeight > 0 ? weighted / totalWeight : 60;
-        let pulseHz = (bpm / 60) * 0.5;
-        pulseHz = THREE.MathUtils.clamp(pulseHz, CONFIG.audio.lfoRateMin, CONFIG.audio.lfoRateMax);
-        this.lfo.frequency.setTargetAtTime(pulseHz, now, 0.3);
+        // Update LFO
+        // Just keep it steady for now or map to overall energy
+        this.lfo.frequency.setTargetAtTime(0.5, now, 0.5);
+    }
+
+    /**
+     * Converts a scale degree to a frequency.
+     * @private
+     * @param {string} degree - The degree key (e.g., '1', 'b7').
+     * @param {number} octaveOffset - Octaves to add to root.
+     * @returns {number} The frequency in Hz.
+     */
+    _degreeToFreq(degree, octaveOffset) {
+        const semitonesFromD = DEG[degree];
+        const totalSemitones = semitonesFromD + (12 * octaveOffset);
+        return CONFIG.audio.rootFreq * Math.pow(2, totalSemitones / 12);
     }
 }
