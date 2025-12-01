@@ -77,22 +77,36 @@
         // ============================================================================
         // CONFIGURATION
         // ============================================================================
+        /**
+         * Global configuration object for the application.
+         * Controls camera settings, interaction limits, audio parameters, and visual properties.
+         * @constant
+         * @type {Object}
+         */
         const CONFIG = {
+            /** Camera settings */
             camera: { width: 640, height: 480 },
+            /** Whether to mirror the video input */
             mirrored: true,
+            /** Smoothing factor for pose transitions */
             smoothing: 0.1,
+            /** Smoothing factor for depth transitions */
             depthSmoothing: 0.05,
+            /** Enable or disable debug mode */
             debug: false,
+            /** Grid visual settings */
             grid: {
                 size: 10000,
                 divisions: 20,
                 phaseScale: 500.0
             },
+            /** Interaction limits for rotation */
             interaction: {
                 maxRoll: Math.PI / 2,
                 maxPitch: Math.PI / 6,
                 maxYaw: Math.PI / 2
             },
+            /** Audio synthesis parameters */
             audio: {
                 rootFreq: 73.42, // D2
                 detune: 4,
@@ -105,6 +119,12 @@
             }
         };
 
+        /**
+         * Musical intervals used for harmony generation.
+         * Represents frequency ratios relative to the root note.
+         * @constant
+         * @type {number[]}
+         */
         const BEAUTIFUL_INTERVALS = [
             1.0,    // Unison
             1.25,   // Major 3rd
@@ -115,6 +135,11 @@
             3.0     // 2 oct + 5th
         ];
 
+        /**
+         * Color codes for the performers (Physical, Virtual A, Virtual B).
+         * @constant
+         * @type {number[]}
+         */
         const PERFORMER_COLORS = [
             0x88eeee, // Physical bass
             0xff66ff, // Virtual A
@@ -124,7 +149,16 @@
         // ============================================================================
         // PERFORMER STATE
         // ============================================================================
+        /**
+         * Manages the state of a single performer (either physical or virtual).
+         * Handles position, rotation, and musical properties.
+         */
         class PerformerState {
+            /**
+             * Creates a new PerformerState instance.
+             * @param {number|string} colorHex - The color of the performer in hex format.
+             * @param {boolean} [isBass=false] - Whether this performer controls the bass voice.
+             */
             constructor(colorHex, isBass = false) {
                 this.color = new THREE.Color(colorHex);
                 this.baseColor = this.color.clone();
@@ -161,6 +195,10 @@
                 };
             }
 
+            /**
+             * Updates the current physical state by interpolating towards target values.
+             * Applies smoothing to roll, pitch, yaw, depth, and BPM.
+             */
             updatePhysics() {
                 const a = CONFIG.smoothing;
                 this.current.roll = THREE.MathUtils.lerp(this.current.roll, this.target.roll, a);
@@ -175,13 +213,27 @@
         // ============================================================================
         // VISION SYSTEM (MoveNet multipose, but currently driving only performer 0)
         // ============================================================================
+        /**
+         * Handles video input and pose detection using TensorFlow.js MoveNet model.
+         */
         class VisionSystem {
+            /**
+             * Creates a new VisionSystem instance.
+             * @param {HTMLVideoElement} videoElement - The HTML video element to use for input.
+             */
             constructor(videoElement) {
                 this.video = videoElement;
                 this.detector = null;
                 this.isReady = false;
             }
 
+            /**
+             * Initializes the camera and loads the MoveNet model.
+             * Requests user media access.
+             * @async
+             * @returns {Promise<void>}
+             * @throws {Error} If getUserMedia is not available.
+             */
             async init() {
                 let stream;
                 if (!navigator.mediaDevices || !navigator.mediaDevices.getUserMedia) {
@@ -221,6 +273,11 @@
                 this.isReady = true;
             }
 
+            /**
+             * Estimates poses from the current video frame.
+             * @async
+             * @returns {Promise<Array<Object>>} An array of detected poses.
+             */
             async update() {
                 if (!this.isReady) return [];
                 try {
@@ -234,7 +291,15 @@
         // ============================================================================
         // LATTICE VIEWPORT (One per Performer)
         // ============================================================================
+        /**
+         * Manages the 3D scene rendering for a specific performer.
+         * Handles the lattice grid and the performer's triangular representation.
+         */
         class LatticeViewport {
+            /**
+             * Creates a new LatticeViewport instance.
+             * @param {number|string} colorHex - The primary color for this viewport.
+             */
             constructor(colorHex) {
                 this.scene = new THREE.Scene();
                 this.scene.fog = new THREE.FogExp2(0x000000, 0.0004);
@@ -261,6 +326,11 @@
                 this._animateInLattice(4000);
             }
 
+            /**
+             * Initializes the lattice grid geometry.
+             * Creates a BufferGeometry with shader material for the 3D grid.
+             * @private
+             */
             _initLattice() {
                 const size = CONFIG.grid.size;
                 const divisions = CONFIG.grid.divisions;
@@ -353,6 +423,10 @@
                 this.scene.add(this.mesh);
             }
 
+            /**
+             * Initializes the triangle mesh used to represent the performer's pose.
+             * @private
+             */
             _initTriangle() {
                 const triGeom = new THREE.BufferGeometry();
                 const verts = new Float32Array([
@@ -384,6 +458,11 @@
                 this.scene.add(this.triWire);
             }
 
+            /**
+             * Animates the lattice grid lines appearing using Tween.js.
+             * @private
+             * @param {number} [duration=4000] - Duration of the animation in milliseconds.
+             */
             _animateInLattice(duration = 4000) {
                 const posAttr = this.geometry.getAttribute('position');
                 const vertexCount = posAttr.count;
@@ -438,6 +517,14 @@
                     .start();
             }
 
+            /**
+             * Renders the scene for this viewport.
+             * Sets the scissor test and viewport area on the renderer.
+             * Updates shader uniforms and mesh positions.
+             * @param {THREE.WebGLRenderer} renderer - The Three.js renderer.
+             * @param {Object} rect - The viewport rectangle {x, y, width, height}.
+             * @param {PerformerState} performerState - The state of the performer to render.
+             */
             render(renderer, rect, performerState) {
                 const { x, y, width, height } = rect;
                 renderer.setViewport(x, y, width, height);
@@ -502,7 +589,14 @@
         // ============================================================================
         // AUDIO SYSTEM (Triad, one voice per performer)
         // ============================================================================
+        /**
+         * Manages audio synthesis for the application.
+         * Uses the Web Audio API to create voices and effects.
+         */
         class AudioSystem {
+            /**
+             * Creates a new AudioSystem instance.
+             */
             constructor() {
                 this.ctx = null;
                 this.isReady = false;
@@ -516,6 +610,12 @@
                 this.voices = [];
             }
 
+            /**
+             * Initializes the AudioContext, master effects, and voices.
+             * @param {number} voiceCount - The number of voices to create.
+             * @async
+             * @returns {Promise<void>}
+             */
             async init(voiceCount) {
                 const AudioContext = window.AudioContext || window.webkitAudioContext;
                 this.ctx = new AudioContext();
@@ -558,6 +658,12 @@
                 this.isReady = true;
             }
 
+            /**
+             * Creates a single audio voice (synthesizer).
+             * @private
+             * @param {boolean} isBass - Whether this voice is a bass voice.
+             * @returns {Object} The voice object containing oscillators and filters.
+             */
             _createVoice(isBass) {
                 const v = {};
                 v.isBass = isBass;
@@ -591,12 +697,21 @@
                 return v;
             }
 
+            /**
+             * Resumes the AudioContext if it is suspended.
+             * Essential for starting audio after user interaction.
+             */
             resume() {
                 if (this.ctx && this.ctx.state === 'suspended') {
                     this.ctx.resume();
                 }
             }
 
+            /**
+             * Updates audio parameters based on the state of all performers.
+             * Modifies frequency, filter cutoff, and gain.
+             * @param {PerformerState[]} performers - Array of performer states.
+             */
             update(performers) {
                 if (!this.isReady) return;
                 const now = this.ctx.currentTime;
@@ -647,17 +762,36 @@
         // ============================================================================
         // AUTOPILOT (Virtual performers 1 & 2)
         // ============================================================================
+        /**
+         * Controls the behavior of virtual performers (autopilot mode).
+         * Simulates presence and movement for performers not controlled by a human.
+         */
         class Autopilot {
+            /**
+             * Creates a new Autopilot instance.
+             * @param {PerformerState[]} performers - Array of all performer states.
+             * @param {number[]} indices - Indices of the performers to control.
+             */
             constructor(performers, indices) {
                 this.performers = performers;
                 this.indices = indices;
                 this.nextEventTime = performance.now() + this._randomDelay();
             }
 
+            /**
+             * Generates a random delay for the next event.
+             * @private
+             * @returns {number} Delay in milliseconds.
+             */
             _randomDelay() {
                 return 3000 + Math.random() * 5000;
             }
 
+            /**
+             * Activates a virtual performer with random parameters.
+             * @private
+             * @param {PerformerState} state - The performer state to modify.
+             */
             _turnOn(state) {
                 state.hasPerformer = true;
                 state.target.bpmPref = THREE.MathUtils.randFloat(CONFIG.audio.bpmMin, CONFIG.audio.bpmMax);
@@ -685,6 +819,11 @@
                 state.target.depth = THREE.MathUtils.randFloat(-8, -2);
             }
 
+            /**
+             * Deactivates a virtual performer.
+             * @private
+             * @param {PerformerState} state - The performer state to modify.
+             */
             _turnOff(state) {
                 state.hasPerformer = false;
                 state.triangle.visible = false;
@@ -694,6 +833,10 @@
                 state.target.depth = -10;
             }
 
+            /**
+             * Executes a single decision step for the autopilot.
+             * Randomly turns performers on or off.
+             */
             step() {
                 const items = this.indices.map(i => ({ idx: i, state: this.performers[i] }));
                 const active = items.filter(o => o.state.hasPerformer);
@@ -716,6 +859,10 @@
                 }
             }
 
+            /**
+             * Updates the autopilot state.
+             * Checks if enough time has passed to trigger the next step.
+             */
             update() {
                 const now = performance.now();
                 if (now >= this.nextEventTime) {
@@ -728,7 +875,15 @@
         // ============================================================================
         // DEBUG OVERLAY (Press "D" to toggle)
         // ============================================================================
+        /**
+         * Manages the debug overlay canvas.
+         * Displays performance metrics and internal state when enabled.
+         */
         class DebugOverlay {
+            /**
+             * Creates a new DebugOverlay instance.
+             * @param {string} canvasId - The ID of the canvas element.
+             */
             constructor(canvasId) {
                 this.canvas = document.getElementById(canvasId);
                 this.ctx = this.canvas.getContext('2d');
@@ -742,11 +897,19 @@
                 });
             }
 
+            /**
+             * Resizes the canvas to match the window dimensions.
+             */
             resize() {
                 this.canvas.width = window.innerWidth;
                 this.canvas.height = window.innerHeight;
             }
 
+            /**
+             * Draws debug information to the canvas.
+             * @param {Array<Object>} poses - The detected poses.
+             * @param {PerformerState[]} performers - Array of performer states.
+             */
             draw(poses, performers) {
                 this.ctx.clearRect(0, 0, this.canvas.width, this.canvas.height);
 
@@ -779,7 +942,14 @@
         // ============================================================================
         // APP
         // ============================================================================
+        /**
+         * Main application class.
+         * Orchestrates the Vision, Audio, and Rendering systems.
+         */
         class App {
+            /**
+             * Creates a new App instance and initializes the scene.
+             */
             constructor() {
                 this.vision = new VisionSystem(document.getElementById('video'));
 
@@ -811,6 +981,10 @@
                 this._init();
             }
 
+            /**
+             * Sets up the start overlay to initialize audio on user interaction.
+             * @private
+             */
             _wireAudioStartOverlay() {
                 const overlay = document.getElementById('start-overlay');
                 overlay.addEventListener('click', async () => {
@@ -821,6 +995,11 @@
                 }, { once: true });
             }
 
+            /**
+             * Initializes the vision system and starts the main loop.
+             * @private
+             * @async
+             */
             async _init() {
                 try {
                     await this.vision.init();
@@ -830,6 +1009,12 @@
                 this.loop();
             }
 
+            /**
+             * Maps detected poses to the physical performer's state.
+             * Calculates rotation, depth, and musical parameters from keypoints.
+             * @private
+             * @param {Array<Object>} poses - Array of detected poses from MoveNet.
+             */
             _updatePhysicalFromPoses(poses) {
                 const p = this.performers[0];
                 const vW = CONFIG.camera.width;
@@ -957,6 +1142,11 @@
                 p.noteRatio = BEAUTIFUL_INTERVALS[safeIdx];
             }
 
+            /**
+             * Renders all active viewports to the screen.
+             * Divides the screen into vertical strips for each performer.
+             * @private
+             */
             _renderViewports() {
                 const width = window.innerWidth;
                 const height = window.innerHeight;
@@ -989,6 +1179,12 @@
                 });
             }
 
+            /**
+             * The main game loop.
+             * Updates vision, physics, audio, and renders the scene.
+             * Requests the next animation frame.
+             * @async
+             */
             async loop() {
                 const poses = await this.vision.update();
 
