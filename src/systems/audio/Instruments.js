@@ -1,3 +1,5 @@
+import { CONFIG } from '../../core/Config.js';
+
 export class Synthesizer {
     constructor(ctx, destination) {
         this.ctx = ctx;
@@ -30,6 +32,35 @@ export class Synthesizer {
     }
 }
 
+export class KickDrum extends Synthesizer {
+    constructor(ctx, destination) {
+        super(ctx, destination);
+        // Kick gain from config
+        this.output.gain.value = CONFIG.audio.mix.kick;
+    }
+
+    playNote(time, velocity = 1.0) {
+        const osc = this.ctx.createOscillator();
+        osc.type = 'sine';
+
+        const gain = this.ctx.createGain();
+
+        osc.connect(gain);
+        gain.connect(this.output);
+
+        // Pitch Envelope (Drop)
+        osc.frequency.setValueAtTime(150, time);
+        osc.frequency.exponentialRampToValueAtTime(0.01, time + 0.5);
+
+        // Gain Envelope
+        gain.gain.setValueAtTime(velocity, time);
+        gain.gain.exponentialRampToValueAtTime(0.001, time + 0.5);
+
+        osc.start(time);
+        osc.stop(time + 0.5);
+    }
+}
+
 export class PulseBass extends Synthesizer {
     constructor(ctx, destination) {
         super(ctx, destination);
@@ -38,6 +69,9 @@ export class PulseBass extends Synthesizer {
         this.filter.frequency.value = 400;
         this.filter.Q.value = 5;
         this.filter.connect(this.output); // Connect filter to output (which goes to panner)
+
+        // Config volume
+        this.output.gain.value = CONFIG.audio.mix.bass;
     }
 
     modulate(params) {
@@ -85,8 +119,8 @@ export class PulseBass extends Synthesizer {
 export class StringPad extends Synthesizer {
     constructor(ctx, destination) {
         super(ctx, destination);
-        // Increased gain from 0.4 to 0.8
-        this.output.gain.value = 0.8;
+        // Config volume
+        this.output.gain.value = CONFIG.audio.mix.pad;
 
         this.filter = ctx.createBiquadFilter();
         this.filter.type = 'lowpass';
@@ -142,6 +176,9 @@ export class PluckSynth extends Synthesizer {
     constructor(ctx, destination) {
         super(ctx, destination);
 
+        // Config volume
+        this.output.gain.value = CONFIG.audio.mix.ostinato;
+
         this.filter = this.ctx.createBiquadFilter();
         this.filter.type = 'lowpass';
         this.filter.frequency.value = 800;
@@ -182,6 +219,8 @@ export class PluckSynth extends Synthesizer {
 export class ArpSynth extends Synthesizer {
     constructor(ctx, destination) {
         super(ctx, destination);
+        // Config volume
+        this.output.gain.value = CONFIG.audio.mix.arp;
     }
 
     // ArpSynth doesn't strictly need a filter modulation but we can add one if we want
