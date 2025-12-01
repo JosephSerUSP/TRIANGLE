@@ -35,6 +35,14 @@ export class App {
             new Performer(PERFORMER_COLORS[2], false, true)
         ];
 
+        // Track layout state for animations
+        this.layoutStates = this.performers.map(() => ({
+            centerNDC: 0,
+            widthNDC: 0, // Starts closed
+            opacity: 0,
+            angle: 0
+        }));
+
         this.autopilot = new AutopilotSystem([1, 2]);
 
         // --- 3. Initialize Outputs ---
@@ -43,6 +51,7 @@ export class App {
         this.renderer = new THREE.WebGLRenderer({ antialias: true, alpha: false });
         this.renderer.setPixelRatio(Math.min(window.devicePixelRatio, 2));
         this.renderer.setSize(window.innerWidth, window.innerHeight);
+        this.renderer.autoClear = false; // Important for compositing viewports
 
         const container = document.getElementById('canvas-container');
         if (container) {
@@ -94,39 +103,82 @@ export class App {
     }
 
     /**
-     * Renders all active viewports to the screen.
-     * Divides the screen into vertical strips for each performer.
+     * Updates and renders the viewports with smooth transitions.
      * @private
      */
     _renderViewports() {
-        const width = window.innerWidth;
-        const height = window.innerHeight;
+        // 1. Determine active performers
+        const activeIndices = [];
+        this.performers.forEach((p, idx) => {
+            if (p.hasPerformer) activeIndices.push(idx);
+        });
 
-        this.renderer.setSize(width, height);
-        this.renderer.setScissorTest(true);
-
-        const activeIndices = this.performers
-            .map((p, idx) => ({ p, idx }))
-            .filter(o => o.p.hasPerformer);
-
-        let indicesToRender;
+        // If no one is active, maybe show P0 as default (or none)?
+        // Original logic showed P0 if empty. Let's stick to that for "base state".
         if (activeIndices.length === 0) {
-            indicesToRender = [0];
-        } else {
-            indicesToRender = activeIndices.map(o => o.idx);
+            activeIndices.push(0);
         }
 
-        const count = indicesToRender.length;
-        const viewportWidth = width / count;
+        const count = activeIndices.length;
+        const widthNDC = 2.0 / count; // Total width in NDC is 2.0 (-1 to 1)
 
-        indicesToRender.forEach((idx, order) => {
-            const rect = {
-                x: order * viewportWidth,
-                y: 0,
-                width: viewportWidth,
-                height
-            };
-            this.viewports[idx].render(this.renderer, rect, this.performers[idx]);
+        // 2. Update Layout Targets & Tween
+        this.performers.forEach((p, idx) => {
+            const state = this.layoutStates[idx];
+            const isActive = activeIndices.includes(idx);
+
+            // Calculate target geometric properties
+            let targetCenterNDC = 0;
+            let targetWidthNDC = 0;
+            let targetOpacity = 0;
+
+            if (isActive) {
+                const order = activeIndices.indexOf(idx);
+                // Map order (0..count-1) to NDC center
+                // Start X = -1. Step = 2/count. Center = Start + Step/2 + order*Step
+                // Center = -1 + (1/count) + order * (2/count)
+                //        = -1 + (2*order + 1)/count
+                targetCenterNDC = -1.0 + (2.0 * order + 1.0) / count;
+                targetWidthNDC = widthNDC; // Slight overlap? maybe not needed with masking
+                targetOpacity = 1.0;
+            } else {
+                // If inactive, shrink to current center (or stay there and fade out)
+                targetCenterNDC = state.centerNDC;
+                targetWidthNDC = 0.0;
+                targetOpacity = 0.0;
+            }
+
+            // "Angle of the edge of the viewport responds to the Expression Triangle"
+            // Use performer's roll.
+            // We animate this too, but maybe directly from performer state is fine.
+            // But let's smooth it here or use smoothed performer value.
+            // Performer.current.roll is already smoothed.
+            const targetAngle = p.current.roll; // Use roll for the mask angle
+
+            // Tweening logic
+            // Simple lerp for frame-by-frame smoothness
+            const smoothing = 0.1;
+            state.centerNDC += (targetCenterNDC - state.centerNDC) * smoothing;
+            state.widthNDC += (targetWidthNDC - state.widthNDC) * smoothing;
+            state.opacity += (targetOpacity - state.opacity) * smoothing;
+            state.angle = targetAngle; // Direct update or smoothed? Performer state is smoothed.
+        });
+
+        // 3. Render
+        this.renderer.clear(); // Clear once
+
+        // Disable Scissor Test because we use full-screen compositing with shaders
+        this.renderer.setScissorTest(false);
+
+        this.viewports.forEach((vp, idx) => {
+            const state = this.layoutStates[idx];
+            // Only render if visible (optimization)
+            if (state.opacity > 0.001 && state.widthNDC > 0.001) {
+                // Clear depth buffer between layers to ensure each viewport draws on top of previous ones
+                // (or rather, they layer cleanly without Z-fighting)
+                this.renderer.clearDepth();
+                vp.render(this.renderer, this.performers[idx], state);
+            }
         });
     }
 

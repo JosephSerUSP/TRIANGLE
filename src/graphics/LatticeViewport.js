@@ -14,6 +14,7 @@ export class LatticeViewport {
      */
     constructor(colorHex) {
         this.scene = new THREE.Scene();
+        // Fog handled in shader, but scene.fog helps with other objects if added
         this.scene.fog = new THREE.FogExp2(0x000000, 0.0004);
 
         this.camera = new THREE.PerspectiveCamera(75, 1, 0.1, 15000);
@@ -24,7 +25,14 @@ export class LatticeViewport {
             uPhaseZ: { value: 0 },
             uGridSize: { value: CONFIG.grid.size },
             uColor: { value: new THREE.Color(colorHex) },
-            uRotation: { value: new THREE.Vector3(0, 0, 0) }
+            uRotation: { value: new THREE.Vector3(0, 0, 0) },
+            // New uniforms for masking
+            uCenterNDC: { value: 0.0 },     // Center X in NDC (-1 to 1)
+            uWidthNDC: { value: 2.0 },      // Width in NDC (2.0 = full screen)
+            uAngle: { value: 0.0 },         // Rotation angle in radians
+            uEdgeSoftness: { value: 0.05 }, // Softness of the edge in NDC
+            uAspect: { value: 1.0 },        // Aspect ratio (width/height)
+            uOpacity: { value: 1.0 }        // Master opacity for entrance/exit
         };
 
         this.finalPositions = [];
@@ -81,12 +89,15 @@ export class LatticeViewport {
         const material = new THREE.ShaderMaterial({
             uniforms: this.uniforms,
             transparent: true,
+            // depthTest: false, // Optional: might want this if we want additivity or custom blending
             vertexShader: `
                 attribute float isLongitudinal;
                 uniform vec3 uRotation;
                 uniform float uPhaseZ;
                 uniform float uGridSize;
+
                 varying float vDepth;
+                varying vec2 vNdc;
 
                 mat4 rotationMatrix(vec3 axis, float angle) {
                     axis = normalize(axis);
@@ -116,16 +127,68 @@ export class LatticeViewport {
 
                     vec4 mvPosition = modelViewMatrix * rot * vec4(pos, 1.0);
                     gl_Position = projectionMatrix * mvPosition;
+
+                    // Pass Normalized Device Coordinates to fragment
+                    vNdc = gl_Position.xy / gl_Position.w;
                     vDepth = -mvPosition.z;
                 }
             `,
             fragmentShader: `
                 uniform vec3 uColor;
+                uniform float uCenterNDC;
+                uniform float uWidthNDC;
+                uniform float uAngle;
+                uniform float uEdgeSoftness;
+                uniform float uAspect;
+                uniform float uOpacity;
+
                 varying float vDepth;
+                varying vec2 vNdc;
+
                 void main() {
                     float fogFactor = exp(-0.0004 * 0.0004 * vDepth * vDepth * 1.44);
-                    float alpha = clamp(fogFactor, 0.0, 1.0) * 0.9;
-                    gl_FragColor = vec4(uColor, alpha);
+                    float baseAlpha = clamp(fogFactor, 0.0, 1.0) * 0.9;
+
+                    // --- Viewport Masking ---
+                    // Correct X for aspect ratio to ensure rotation is geometrically correct
+                    vec2 p = vNdc;
+                    p.x *= uAspect;
+
+                    vec2 center = vec2(uCenterNDC, 0.0);
+                    center.x *= uAspect;
+
+                    vec2 diff = p - center;
+
+                    // Rotate point by -angle to align mask strip with Y axis
+                    float s = sin(-uAngle);
+                    float c = cos(-uAngle);
+                    vec2 rotated = vec2(diff.x * c - diff.y * s, diff.x * s + diff.y * c);
+
+                    // Mask width check
+                    float halfWidth = uWidthNDC * 0.5 * uAspect; // Scale width by aspect?
+                    // Wait, width is usually relative to screen width.
+                    // If uWidthNDC is 1.0 (half screen), it should be 1.0 in NDC X.
+                    // So we should NOT multiply halfWidth by aspect if we want uWidthNDC to mean "screen fraction".
+                    // But we multiplied p.x by aspect. So we are in "Square NDC" space (height-relative).
+                    // So we DO need to convert uWidthNDC (which is X-relative) to this space.
+                    // uWidthNDC is in X-units (-1..1).
+                    // So halfWidth in X-units is uWidthNDC/2.
+                    // In "Square NDC", X-units are multiplied by aspect.
+                    halfWidth = (uWidthNDC * 0.5) * uAspect;
+
+                    float dist = abs(rotated.x);
+                    // Ensure edge0 < edge1 for smoothstep compatibility.
+                    // We want mask = 1 when dist < halfWidth, and 0 when dist > halfWidth + softness.
+                    float mask = 1.0 - smoothstep(halfWidth, halfWidth + uEdgeSoftness, dist);
+
+                    // Apply master opacity
+                    mask *= uOpacity;
+
+                    float finalAlpha = baseAlpha * mask;
+
+                    if (finalAlpha < 0.001) discard;
+
+                    gl_FragColor = vec4(uColor, finalAlpha);
                 }
             `
         });
@@ -147,6 +210,17 @@ export class LatticeViewport {
             100, -100, 0
         ]);
         triGeom.setAttribute('position', new THREE.BufferAttribute(verts, 3));
+
+        // Use similar masking logic for the triangle if we want it clipped too.
+        // But the triangle is a simple mesh.
+        // For now, let's keep the triangle unmasked or basic,
+        // OR we can make it obey the viewport mask by using a similar shader.
+        // To save time/complexity, I'll leave the triangle basic.
+        // It might "bleed" out of the viewport if we don't mask it.
+        // But since we are compositing, maybe that's okay?
+        // "Jumping in and out" implies the whole viewport content.
+        // If the triangle bleeds, it might look weird.
+        // Let's hide the triangle if the alpha is 0.
 
         const triMat = new THREE.MeshBasicMaterial({
             color: 0xffffff,
@@ -189,7 +263,6 @@ export class LatticeViewport {
 
         const progress = { value: 0 };
 
-        // Handle case where TWEEN might not be fully initialized or compatible
         if (!TWEEN || !TWEEN.Tween) {
             for (let v = 0; v < vertexCount; v++) {
                 posAttr.setXYZ(v,
@@ -231,19 +304,25 @@ export class LatticeViewport {
 
     /**
      * Renders the scene for this viewport.
-     * Sets the scissor test and viewport area on the renderer.
-     * Updates shader uniforms and mesh positions.
      * @param {THREE.WebGLRenderer} renderer - The Three.js renderer.
-     * @param {Object} rect - The viewport rectangle {x, y, width, height}.
      * @param {Performer} performer - The state of the performer to render.
+     * @param {Object} layout - Layout parameters { centerNDC, widthNDC, opacity, angle }.
      */
-    render(renderer, rect, performer) {
-        const { x, y, width, height } = rect;
-        renderer.setViewport(x, y, width, height);
-        renderer.setScissor(x, y, width, height);
-        renderer.setScissorTest(true);
+    render(renderer, performer, layout) {
+        // We render to the FULL screen, but use the shader mask to define visibility.
+        // We assume the renderer is already set to the full canvas size in App.js
+        // However, for optimization, we *could* use scissor, but let's stick to full screen compositing for now.
 
-        this.camera.aspect = width / height;
+        // Update layout uniforms
+        this.uniforms.uCenterNDC.value = layout.centerNDC;
+        this.uniforms.uWidthNDC.value = layout.widthNDC;
+        this.uniforms.uOpacity.value = layout.opacity;
+        this.uniforms.uAngle.value = layout.angle;
+
+        const size = new THREE.Vector2();
+        renderer.getSize(size);
+        this.uniforms.uAspect.value = size.x / size.y;
+        this.camera.aspect = size.x / size.y;
         this.camera.updateProjectionMatrix();
 
         const now = performance.now() * 0.001;
@@ -257,19 +336,23 @@ export class LatticeViewport {
             performer.current.roll
         );
 
-        // Color intensity: bright if active, dim if not
+        // Base color intensity from performer state (if we still want the dimming effect on top of mask)
+        // The prompt says "animate into position", so we rely on uOpacity and width.
+        // But maybe we keep the "dim when inactive" logic inside the mask?
+        // Actually, if performer is inactive, width/opacity will go to 0, so it disappears.
+        // This is what we want for "jumping in and out" fix.
+
         const base = performer.baseColor;
-        const intensity = performer.hasPerformer ? 1.0 : 0.18;
-        this.uniforms.uColor.value.setRGB(
-            base.r * intensity,
-            base.g * intensity,
-            base.b * intensity
-        );
+        this.uniforms.uColor.value.setRGB(base.r, base.g, base.b);
 
         const tri = performer.triangle;
-        if (tri.visible && performer.hasPerformer) {
+        // Triangle visibility logic
+        // We should probably hide the triangle if the viewport is closed (opacity ~ 0)
+        if (tri.visible && layout.opacity > 0.01) {
             this.triMesh.visible = true;
             this.triWire.visible = true;
+            this.triMesh.material.opacity = 0.12 * layout.opacity;
+            this.triWire.material.opacity = 0.6 * layout.opacity;
 
             const positions = this.triMesh.geometry.attributes.position.array;
             const scale = 320;
