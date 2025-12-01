@@ -1,15 +1,16 @@
-// src/App.js
 import * as THREE from 'three';
 import * as TWEEN from '@tweenjs/tween.js';
-import { CONFIG } from './core/Config.js';
-import { PERFORMER_COLORS, BEAUTIFUL_INTERVALS } from './core/Constants.js';
-import { PerformerState } from './state/PerformerState.js';
-import { Autopilot } from './state/Autopilot.js';
-import { AudioSystem } from './systems/AudioSystem.js';
+import { CONFIG, BEAUTIFUL_INTERVALS, PERFORMER_COLORS } from './config.js';
+import { PerformerState } from './core/PerformerState.js';
 import { VisionSystem } from './systems/VisionSystem.js';
-import { LatticeViewport } from './graphics/LatticeViewport.js';
-import { DebugOverlay } from './ui/DebugOverlay.js';
+import { LatticeViewport } from './rendering/LatticeViewport.js';
+import { AudioSystem } from './systems/AudioSystem.js';
+import { Autopilot } from './logic/Autopilot.js';
+import { DebugOverlay } from './utils/DebugOverlay.js';
 
+// ============================================================================
+// APP
+// ============================================================================
 /**
  * Main application class.
  * Orchestrates the Vision, Audio, and Rendering systems.
@@ -44,7 +45,6 @@ export class App {
         );
 
         this.debug = new DebugOverlay('debug-layer');
-        this.currentPoses = [];
 
         this._wireAudioStartOverlay();
         this._init();
@@ -65,7 +65,7 @@ export class App {
     }
 
     /**
-     * Initializes the vision system and starts the main loops.
+     * Initializes the vision system and starts the main loop.
      * @private
      * @async
      */
@@ -75,10 +75,7 @@ export class App {
         } catch (err) {
             console.error('Vision init failed:', err);
         }
-
-        // Start independent loops
-        this.startVisionLoop();
-        this.startRenderLoop();
+        this.loop();
     }
 
     /**
@@ -252,41 +249,27 @@ export class App {
     }
 
     /**
-     * The Vision Loop.
-     * Runs as fast as the detector can process frames.
+     * The main game loop.
+     * Updates vision, physics, audio, and renders the scene.
+     * Requests the next animation frame.
      * @async
      */
-    async startVisionLoop() {
-        while (true) {
-             const poses = await this.vision.update();
-             this.currentPoses = poses;
-             this._updatePhysicalFromPoses(poses);
-             // We need a small yield to allow the UI to remain responsive if detection is super fast (unlikely)
-             // or just to let the browser breathe.
-             await new Promise(requestAnimationFrame);
+    async loop() {
+        const poses = await this.vision.update();
+
+        this._updatePhysicalFromPoses(poses);
+        this.autopilot.update();
+
+        this.performers.forEach(p => p.updatePhysics());
+
+        if (this.audio.isReady) {
+            this.audio.update(this.performers);
         }
-    }
 
-    /**
-     * The Render Loop.
-     * Updates physics, audio, and renders the scene at screen refresh rate.
-     */
-    startRenderLoop() {
-        const loop = () => {
-            this.autopilot.update();
+        TWEEN.update();
+        this._renderViewports();
+        this.debug.draw(poses, this.performers);
 
-            this.performers.forEach(p => p.updatePhysics());
-
-            if (this.audio.isReady) {
-                this.audio.update(this.performers);
-            }
-
-            TWEEN.update();
-            this._renderViewports();
-            this.debug.draw(this.currentPoses, this.performers);
-
-            requestAnimationFrame(loop);
-        };
-        requestAnimationFrame(loop);
+        requestAnimationFrame(() => this.loop());
     }
 }

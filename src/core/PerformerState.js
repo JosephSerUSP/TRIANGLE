@@ -1,7 +1,9 @@
-// src/state/PerformerState.js
 import * as THREE from 'three';
-import { CONFIG } from '../core/Config.js';
+import { CONFIG } from '../config.js';
 
+// ============================================================================
+// PERFORMER STATE
+// ============================================================================
 /**
  * Manages the state of a single performer (either physical or virtual).
  * Handles position, rotation, and musical properties.

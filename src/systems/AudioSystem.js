@@ -1,7 +1,9 @@
-// src/systems/AudioSystem.js
 import * as THREE from 'three';
-import { CONFIG } from '../core/Config.js';
+import { CONFIG } from '../config.js';
 
+// ============================================================================
+// AUDIO SYSTEM (Triad, one voice per performer)
+// ============================================================================
 /**
  * Manages audio synthesis for the application.
  * Uses the Web Audio API to create voices and effects.

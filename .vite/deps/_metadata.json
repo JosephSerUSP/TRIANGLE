@@ -1,0 +1,49 @@
+{
+  "hash": "8bed9af9",
+  "configHash": "135df27c",
+  "lockfileHash": "d0bf8563",
+  "browserHash": "62b6578e",
+  "optimized": {
+    "@tweenjs/tween.js": {
+      "src": "../../node_modules/@tweenjs/tween.js/dist/tween.esm.js",
+      "file": "@tweenjs_tween__js.js",
+      "fileHash": "87522566",
+      "needsInterop": false
+    },
+    "three": {
+      "src": "../../node_modules/three/build/three.module.js",
+      "file": "three.js",
+      "fileHash": "affde6ef",
+      "needsInterop": false
+    },
+    "@tensorflow/tfjs-core": {
+      "src": "../../node_modules/@tensorflow/tfjs-core/dist/index.js",
+      "file": "@tensorflow_tfjs-core.js",
+      "fileHash": "e9099ad1",
+      "needsInterop": false
+    },
+    "@tensorflow/tfjs-backend-webgl": {
+      "src": "../../node_modules/@tensorflow/tfjs-backend-webgl/dist/index.js",
+      "file": "@tensorflow_tfjs-backend-webgl.js",
+      "fileHash": "ef6b1481",
+      "needsInterop": false
+    },
+    "@tensorflow-models/pose-detection": {
+      "src": "../../node_modules/@tensorflow-models/pose-detection/dist/pose-detection.esm.js",
+      "file": "@tensorflow-models_pose-detection.js",
+      "fileHash": "89f0ab6f",
+      "needsInterop": false
+    }
+  },
+  "chunks": {
+    "chunk-47JP6LEW": {
+      "file": "chunk-47JP6LEW.js"
+    },
+    "chunk-KYCYY53Z": {
+      "file": "chunk-KYCYY53Z.js"
+    },
+    "chunk-G3PMV62Z": {
+      "file": "chunk-G3PMV62Z.js"
+    }
+  }
+}

@@ -1,9 +1,11 @@
-// src/systems/VisionSystem.js
 import * as tf from '@tensorflow/tfjs-core';
 import '@tensorflow/tfjs-backend-webgl';
 import * as poseDetection from '@tensorflow-models/pose-detection';
-import { CONFIG } from '../core/Config.js';
+import { CONFIG } from '../config.js';
 
+// ============================================================================
+// VISION SYSTEM (MoveNet multipose, but currently driving only performer 0)
+// ============================================================================
 /**
  * Handles video input and pose detection using TensorFlow.js MoveNet model.
  */

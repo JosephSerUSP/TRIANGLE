@@ -1,6 +1,8 @@
-// src/ui/DebugOverlay.js
-import { CONFIG } from '../core/Config.js';
+import { CONFIG } from '../config.js';
 
+// ============================================================================
+// DEBUG OVERLAY (Press "D" to toggle)
+// ============================================================================
 /**
  * Manages the debug overlay canvas.
  * Displays performance metrics and internal state when enabled.

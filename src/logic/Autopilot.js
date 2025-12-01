@@ -1,8 +1,9 @@
-// src/state/Autopilot.js
 import * as THREE from 'three';
-import { CONFIG } from '../core/Config.js';
-import { BEAUTIFUL_INTERVALS } from '../core/Constants.js';
+import { CONFIG, BEAUTIFUL_INTERVALS } from '../config.js';
 
+// ============================================================================
+// AUTOPILOT (Virtual performers 1 & 2)
+// ============================================================================
 /**
  * Controls the behavior of virtual performers (autopilot mode).
  * Simulates presence and movement for performers not controlled by a human.
