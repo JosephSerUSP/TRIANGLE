@@ -1,3 +1,5 @@
+// src/core/Constants.js
+
 /**
  * Musical intervals used for harmony generation.
  * Represents frequency ratios relative to the root note.

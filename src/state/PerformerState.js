@@ -1,3 +1,4 @@
+// src/state/PerformerState.js
 import * as THREE from 'three';
 import { CONFIG } from '../core/Config.js';
 

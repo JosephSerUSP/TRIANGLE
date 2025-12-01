@@ -1,11 +1,12 @@
+// src/App.js
 import * as THREE from 'three';
 import * as TWEEN from '@tweenjs/tween.js';
 import { CONFIG } from './core/Config.js';
 import { PERFORMER_COLORS, BEAUTIFUL_INTERVALS } from './core/Constants.js';
-import { VisionSystem } from './systems/VisionSystem.js';
-import { AudioSystem } from './systems/AudioSystem.js';
 import { PerformerState } from './state/PerformerState.js';
 import { Autopilot } from './state/Autopilot.js';
+import { AudioSystem } from './systems/AudioSystem.js';
+import { VisionSystem } from './systems/VisionSystem.js';
 import { LatticeViewport } from './graphics/LatticeViewport.js';
 import { DebugOverlay } from './ui/DebugOverlay.js';
 
@@ -43,8 +44,7 @@ export class App {
         );
 
         this.debug = new DebugOverlay('debug-layer');
-
-        this.lastPoses = [];
+        this.currentPoses = [];
 
         this._wireAudioStartOverlay();
         this._init();
@@ -76,24 +76,9 @@ export class App {
             console.error('Vision init failed:', err);
         }
 
-        // Start the vision loop (runs as fast as possible, async)
-        this.visionLoop();
-
-        // Start the render loop (synced to display refresh rate)
-        this.renderLoop();
-    }
-
-    /**
-     * The vision loop.
-     * Updates vision data asynchronously.
-     */
-    async visionLoop() {
-        while (true) {
-            const poses = await this.vision.update();
-            this.lastPoses = poses; // Store latest poses for the render loop to pick up
-            // Small yield to prevent blocking if update is instant (unlikely but safe)
-            await new Promise(resolve => setTimeout(resolve, 0));
-        }
+        // Start independent loops
+        this.startVisionLoop();
+        this.startRenderLoop();
     }
 
     /**
@@ -267,26 +252,41 @@ export class App {
     }
 
     /**
-     * The main render loop.
-     * Updates physics, audio, and renders the scene based on the latest available state.
-     * Requests the next animation frame.
+     * The Vision Loop.
+     * Runs as fast as the detector can process frames.
+     * @async
      */
-    renderLoop() {
-        // Use the latest available poses
-        this._updatePhysicalFromPoses(this.lastPoses);
-
-        this.autopilot.update();
-
-        this.performers.forEach(p => p.updatePhysics());
-
-        if (this.audio.isReady) {
-            this.audio.update(this.performers);
+    async startVisionLoop() {
+        while (true) {
+             const poses = await this.vision.update();
+             this.currentPoses = poses;
+             this._updatePhysicalFromPoses(poses);
+             // We need a small yield to allow the UI to remain responsive if detection is super fast (unlikely)
+             // or just to let the browser breathe.
+             await new Promise(requestAnimationFrame);
         }
+    }
 
-        TWEEN.update();
-        this._renderViewports();
-        this.debug.draw(this.lastPoses, this.performers);
+    /**
+     * The Render Loop.
+     * Updates physics, audio, and renders the scene at screen refresh rate.
+     */
+    startRenderLoop() {
+        const loop = () => {
+            this.autopilot.update();
 
-        requestAnimationFrame(() => this.renderLoop());
+            this.performers.forEach(p => p.updatePhysics());
+
+            if (this.audio.isReady) {
+                this.audio.update(this.performers);
+            }
+
+            TWEEN.update();
+            this._renderViewports();
+            this.debug.draw(this.currentPoses, this.performers);
+
+            requestAnimationFrame(loop);
+        };
+        requestAnimationFrame(loop);
     }
 }

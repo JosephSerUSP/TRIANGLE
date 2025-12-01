@@ -1,3 +1,4 @@
+// src/ui/DebugOverlay.js
 import { CONFIG } from '../core/Config.js';
 
 /**

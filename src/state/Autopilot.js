@@ -1,3 +1,4 @@
+// src/state/Autopilot.js
 import * as THREE from 'three';
 import { CONFIG } from '../core/Config.js';
 import { BEAUTIFUL_INTERVALS } from '../core/Constants.js';
