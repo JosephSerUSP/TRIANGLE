@@ -182,28 +182,6 @@ export class AudioSystem {
         const baseFreq = CONFIG.audio.rootFreq;
         const cycleIndex = Math.floor(this.barCounter / 4);
 
-        // --- Kick Drum Logic ---
-        // Threshold check to start playing
-        if (this.kickHeat > 0.05) {
-            let playKick = false;
-
-            // Pattern evolution based on intensity
-            // Low (0.05 - 0.3): Beat 0
-            // Med (0.3 - 0.6): Beat 0, 8 (Halftime)
-            // High (0.6+): Beat 0, 4, 8, 12 (4 on the floor)
-
-            if (beatNumber === 0) playKick = true;
-            else if (this.kickHeat > 0.3 && beatNumber === 8) playKick = true;
-            else if (this.kickHeat > 0.6 && beatNumber % 4 === 0) playKick = true;
-
-            if (playKick) {
-                // Velocity scales with heat
-                // 0.6 to 1.0 range
-                const kickVel = 0.6 + 0.4 * this.kickHeat;
-                this.kick.playNote(0, time, 0.3, kickVel);
-            }
-        }
-
         // --- Performer State Loop ---
         for (let i = 0; i < 3; i++) {
             if (!this._performerStates || !this._performerStates[i]) continue;
@@ -360,24 +338,6 @@ export class AudioSystem {
         const now = this.ctx.currentTime;
         const INTRO_DURATION = 8.0; // 8 seconds (approx 4 bars at 120bpm)
         const OUTRO_DURATION = 4.0; // 4 seconds linger
-
-        // Kick Heat Logic
-        const activeCount = performers.filter(p => p.hasPerformer).length;
-        let targetKickHeat = 0.0;
-
-        if (activeCount >= 3) targetKickHeat = 1.0;
-        else if (activeCount === 2) targetKickHeat = 0.7; // "Lose steam" but keep going
-        else targetKickHeat = 0.0; // "Requires at least 2"
-
-        // Smooth approach
-        // Approx 0.005 per frame -> 200 frames to cross 1.0 -> ~3 seconds
-        const delta = targetKickHeat - this.kickHeat;
-        this.kickHeat += delta * 0.005;
-
-        // Clamp
-        if (this.kickHeat < 0) this.kickHeat = 0;
-        if (this.kickHeat > 1) this.kickHeat = 1;
-
 
         // State Machine Update
         for (let i = 0; i < 3; i++) {
