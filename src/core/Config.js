@@ -23,7 +23,7 @@ export const CONFIG = {
      * 1: Lattice + Triangle
      * 2: Lattice + Triangle + Debug
      */
-    viewMode: 1,
+    viewMode: 0,
     /** Grid visual settings */
     grid: {
         size: 10000,
