@@ -378,7 +378,9 @@ export class LatticeViewport {
         );
 
         const tri = performer.triangle;
-        if (tri.visible && performer.hasPerformer) {
+        const showTriangle = CONFIG.viewMode >= 1;
+
+        if (tri.visible && performer.hasPerformer && showTriangle) {
             this.triMesh.visible = true;
             this.triWire.visible = true;
 
