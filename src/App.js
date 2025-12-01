@@ -3,7 +3,7 @@ import * as THREE from 'three';
 import * as TWEEN from '@tweenjs/tween.js';
 
 import { CONFIG } from './core/Config.js';
-import { PERFORMER_COLORS } from './core/Constants.js';
+import { PERFORMER_COLORS, BEAUTIFUL_INTERVALS } from './core/Constants.js';
 
 import { VisionSystem } from './systems/VisionSystem.js';
 import { AutopilotSystem } from './systems/AutopilotSystem.js';
@@ -39,6 +39,11 @@ export class App {
 
         // --- 3. Initialize Outputs ---
         this.audio = new AudioSystem();
+
+        // Audio Logic State
+        this.assignedFreqs = new Array(3).fill(0);
+        this.wasActive = new Array(3).fill(false);
+        this.wasBass = new Array(3).fill(false);
 
         this.renderer = new THREE.WebGLRenderer({ antialias: true, alpha: false });
         this.renderer.setPixelRatio(Math.min(window.devicePixelRatio, 2));
@@ -126,45 +131,11 @@ export class App {
         // Calculate total presence to normalize widths
         const totalPresence = this.performers.reduce((sum, p) => sum + p.presence, 0);
 
-        // If no presence, render nothing or default?
-        // We probably always want at least one viewport active or fading out.
-        // But logic says P0 is always present? Performer.js logic sets presence to 0 if !hasPerformer.
-        // Let's ensure at least a tiny bit of total presence to avoid divide by zero, or default to P0.
+        // Ensure at least a tiny bit of total presence to avoid divide by zero
         const safeTotal = Math.max(totalPresence, 0.001);
 
-        let currentX = 0;
         const layout = [];
-
-        // Determine separator angles
-        // Separator i is between performer i-1 and i? No, Performer i is effectively Viewport i.
-        // Separators are at the boundaries.
-        // Let's assume left edge of screen is vertical. Right edge of screen is vertical.
-        // Only internal separators are angled.
-        // Separator between VP[i] and VP[i+1].
-
-        // Calculate target widths first
         const widths = this.performers.map(p => (p.presence / safeTotal) * width);
-
-        // Calculate separator angles (in radians, deviation from vertical)
-        // We need N-1 separators for N performers.
-        // Let's say Angle[i] is the angle of the line between Performer i and i+1.
-        // Driven by P[i].roll? Or P[i+1].roll?
-        // The prompt says "angle of the edge of the viewport responds to the Expression Triangle".
-        // Let's use P[i].current.roll for the right edge of P[i].
-
-        // Accumulate X positions
-        let startX = 0;
-
-        // We define the shape by top-x and bottom-x coordinates.
-        // Center X of the column is strictly defined by the accumulated width.
-        // Tilt is applied relative to that center? Or relative to the cut line?
-
-        // Algorithm:
-        // We have N performers. We need N+1 "boundary lines".
-        // Line 0: x = 0 (Left of screen)
-        // Line N: x = Width (Right of screen)
-        // Line i (1 to N-1): x = sum(widths[0]...widths[i-1]). Angle = P[i-1].current.roll.
-
         const boundaries = [];
 
         // Left edge of screen
@@ -174,20 +145,9 @@ export class App {
         for (let i = 0; i < this.performers.length - 1; i++) {
             accumWidth += widths[i];
 
-            // Influence from the performer on the left?
-            // "angle of the edge of the viewport responds to the Expression Triangle of the performer"
-            // Let's assume the performer controls their RIGHT edge.
-            // But what about the last performer? They don't have a right edge (it's the screen edge).
-            // So P0 controls Line 1. P1 controls Line 2. P2 (last) controls screen edge (fixed).
-
-            // Limit angle to avoid extreme skew
+            // Influence from the performer on the left
             let angle = this.performers[i].current.roll || 0;
-            // Roll is usually in radians. Hand roll can be +/- PI.
-            // We should clamp it for visual sanity. +/- 30 degrees (0.5 rad) is plenty.
             angle = THREE.MathUtils.clamp(angle, -0.5, 0.5);
-
-            // If presence is 0, this boundary collapses to the previous one?
-            // Actually, if width is 0, boundaries merge.
 
             boundaries.push({ x: accumWidth, angle: angle });
         }
@@ -203,27 +163,20 @@ export class App {
             const rightB = boundaries[i+1];
 
             // Calculate Top/Bottom offsets based on angle
-            // tan(angle) = dx / (height/2)  => dx = (height/2) * tan(angle)
-            // Top X = CenterX + dx
-            // Bottom X = CenterX - dx
-
-            // Left Boundary Top/Bottom X
             const h2 = height / 2;
             const l_dx = h2 * Math.tan(leftB.angle);
             const l_top = leftB.x + l_dx;
             const l_bot = leftB.x - l_dx;
 
-            // Right Boundary Top/Bottom X
             const r_dx = h2 * Math.tan(rightB.angle);
             const r_top = rightB.x + r_dx;
             const r_bot = rightB.x - r_dx;
 
-            // Bounding Box for Scissor (optimization)
+            // Bounding Box
             const minX = Math.min(l_top, l_bot);
             const maxX = Math.max(r_top, r_bot);
             const w = maxX - minX;
 
-            // Ensure we don't pass negative width or off-screen rects that crash Three.js
             if (w <= 0) continue;
 
             layout.push({
@@ -247,6 +200,67 @@ export class App {
     }
 
     /**
+     * Updates the audio system based on the Conductor logic.
+     * Determines roles (Bass vs Harmony) and assigns frequencies.
+     * @private
+     */
+    _updateAudioLogic() {
+        if (!this.audio.isReady) return;
+
+        // 1. Identify active performers
+        const activeIndices = [];
+        this.performers.forEach((p, i) => {
+            if (p.hasPerformer) {
+                activeIndices.push(i);
+            }
+        });
+
+        // 2. Identify Bass (lowest index active)
+        const bassIdx = activeIndices.length > 0 ? activeIndices[0] : -1;
+
+        // 3. Process each performer
+        this.performers.forEach((p, i) => {
+            const isActive = p.hasPerformer;
+
+            if (!isActive) {
+                this.audio.stop(i);
+                this.wasActive[i] = false;
+                this.wasBass[i] = false;
+                return;
+            }
+
+            const isBass = (i === bassIdx);
+            let targetFreq;
+
+            if (isBass) {
+                targetFreq = CONFIG.audio.rootFreq; // Drone D Bass
+            } else {
+                // Harmony Logic
+                // We pick a new interval if:
+                // 1. Performer just became active
+                // 2. Performer switched from Bass to Harmony
+                // 3. (Optional) Random chance? Sticking to state-change only for now.
+
+                const needsNewNote = !this.wasActive[i] || this.wasBass[i];
+
+                if (needsNewNote) {
+                    const interval = BEAUTIFUL_INTERVALS[Math.floor(Math.random() * BEAUTIFUL_INTERVALS.length)];
+                    targetFreq = CONFIG.audio.rootFreq * interval;
+                    this.assignedFreqs[i] = targetFreq;
+                } else {
+                    targetFreq = this.assignedFreqs[i];
+                }
+            }
+
+            this.audio.play(i, targetFreq);
+
+            // Update state
+            this.wasActive[i] = true;
+            this.wasBass[i] = isBass;
+        });
+    }
+
+    /**
      * The main game loop.
      * Follows the strictly decoupled flow:
      * INPUT (Vision, Autopilot) -> STATE (Performers) -> OUTPUT (Audio, Graphics)
@@ -262,7 +276,6 @@ export class App {
         this.performers[0].updateFromPose(poses);
 
         // Virtual Performers (P1, P2) look at Autopilot Data
-        // autoData is a Map<index, data>
         autoData.forEach((data, idx) => {
              if (this.performers[idx]) {
                  this.performers[idx].updateFromVirtualData(data);
@@ -273,10 +286,8 @@ export class App {
         this.performers.forEach(p => p.updatePhysics());
 
         // --- 3. Update Outputs ---
-        // Audio looks at Performers
-        if (this.audio.isReady) {
-            this.audio.update(this.performers);
-        }
+        // Audio Logic
+        this._updateAudioLogic();
 
         // Graphics look at Performers
         TWEEN.update();
