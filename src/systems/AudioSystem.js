@@ -1,6 +1,7 @@
 // src/systems/AudioSystem.js
 import * as THREE from 'three';
 import { CONFIG } from '../core/Config.js';
+import { CHORDS } from '../core/Constants.js';
 
 /**
  * Manages audio synthesis for the application.
@@ -20,16 +21,22 @@ export class AudioSystem {
         this.lfo = null;
         this.lfoGain = null;
 
-        this.voices = [];
+        // Note assignment state
+        this.activePerformers = [];
+        this.assignedNotes = new Map(); // Map<performerIndex, [freq1, freq2]>
+        this.currentChordIndex = 0;
+
+        // Voice structure: [ [Voice1, Voice2], [Voice1, Voice2], ... ] per performer
+        this.performerVoices = [];
     }
 
     /**
      * Initializes the AudioContext, master effects, and voices.
-     * @param {number} voiceCount - The number of voices to create.
+     * @param {number} performerCount - The number of performers.
      * @async
      * @returns {Promise<void>}
      */
-    async init(voiceCount) {
+    async init(performerCount) {
         const AudioContext = window.AudioContext || window.webkitAudioContext;
         this.ctx = new AudioContext();
 
@@ -61,23 +68,27 @@ export class AudioSystem {
         this.lfoGain.connect(this.masterPulse.gain);
         this.lfo.start();
 
-        this.voices = [];
-        for (let i = 0; i < voiceCount; i++) {
-            const v = this._createVoice();
-            // Connect the end of the voice chain (filter) to master
-            v.filter.connect(this.masterPulse);
-            this.voices.push(v);
+        this.performerVoices = [];
+        for (let i = 0; i < performerCount; i++) {
+            // Each performer gets 2 voices
+            const voices = [
+                this._createVoice(i, 0),
+                this._createVoice(i, 1)
+            ];
+            this.performerVoices.push(voices);
         }
 
         this.isReady = true;
     }
 
     /**
-     * Creates a single audio voice (synthesizer).
+     * Creates a single audio voice (synthesizer) with independent panning.
      * @private
-     * @returns {Object} The voice object containing oscillators and filters.
+     * @param {number} pIdx - Performer Index.
+     * @param {number} vIdx - Voice Index (0 or 1).
+     * @returns {Object} The voice object containing oscillators, filters, and panner.
      */
-    _createVoice() {
+    _createVoice(pIdx, vIdx) {
         const v = {};
 
         // Oscillators
@@ -86,6 +97,9 @@ export class AudioSystem {
 
         // Gain (VCA)
         v.gain = this.ctx.createGain();
+
+        // Panner
+        v.panner = this.ctx.createStereoPanner();
 
         // Filters
         v.highpass = this.ctx.createBiquadFilter();
@@ -98,27 +112,30 @@ export class AudioSystem {
         v.osc1.frequency.value = CONFIG.audio.rootFreq;
         v.osc2.frequency.value = CONFIG.audio.rootFreq;
 
-        v.osc1.detune.value = 0;
-        v.osc2.detune.value = 4; // Slight detune as requested
+        v.osc1.detune.value = -4;
+        v.osc2.detune.value = 4;
 
         v.gain.gain.value = 0.0;
+        v.panner.pan.value = 0;
 
         // Highpass Setup
         v.highpass.type = 'highpass';
-        v.highpass.frequency.value = 10; // Default to bypass (low)
+        v.highpass.frequency.value = 10;
         v.highpass.Q.value = 0.7;
 
         // Lowpass Setup
         v.filter.type = 'lowpass';
         v.filter.Q.value = 1.0;
-        v.filter.frequency.value = 8000; // Fixed High Brightness from snippet
+        v.filter.frequency.value = 8000;
 
-        // Routing: Osc -> Gain -> Highpass -> Lowpass -> Out
+        // Routing: Osc -> Gain -> Highpass -> Lowpass -> Panner -> MasterPulse
         v.osc1.connect(v.gain);
         v.osc2.connect(v.gain);
 
         v.gain.connect(v.highpass);
         v.highpass.connect(v.filter);
+        v.filter.connect(v.panner);
+        v.panner.connect(this.masterPulse);
 
         v.osc1.start();
         v.osc2.start();
@@ -128,7 +145,6 @@ export class AudioSystem {
 
     /**
      * Resumes the AudioContext if it is suspended.
-     * Essential for starting audio after user interaction.
      */
     resume() {
         if (this.ctx && this.ctx.state === 'suspended') {
@@ -137,82 +153,206 @@ export class AudioSystem {
     }
 
     /**
+     * Assigns notes to performers based on a Voice Leading Agent logic.
+     * Called when the composition of active performers changes.
+     * @private
+     * @param {boolean[]} presenceMap - Array indicating which performers are active.
+     */
+    _reassignNotes(presenceMap) {
+        const root = CONFIG.audio.rootFreq;
+
+        // Pick a chord from the progression
+        // We can cycle or pick randomly. Let's cycle for structure.
+        this.currentChordIndex = (this.currentChordIndex + 1) % CHORDS.length;
+        const chord = CHORDS[this.currentChordIndex];
+        const intervals = chord.intervals;
+
+        // Pool of available notes (frequencies)
+        // Ensure we cover multiple octaves
+        const pool = [];
+        [1, 2, 4].forEach(octave => {
+            intervals.forEach(ratio => {
+                pool.push(root * ratio * octave);
+            });
+        });
+
+        // Assign notes
+        // P0 (Bass) always gets Root + Fifth/Octave if active
+        // Others get notes from the chord to form "wistful chords"
+
+        presenceMap.forEach((isActive, idx) => {
+            if (!isActive) {
+                this.assignedNotes.set(idx, [0, 0]);
+                return;
+            }
+
+            if (idx === 0) {
+                // Bass Performer
+                // Voice 1: Deep Root (Bass) - Fixed D2
+                // Voice 2: Harmony Note (e.g., 5th or 10th)
+                const bassNote = root;
+                // Pick a nice harmony note for the second voice, maybe the 5th or 3rd from the chord
+                // Let's pick a random note from the lower register of the chord
+                const harmonyNote = pool[Math.floor(Math.random() * 3)] * 2;
+                this.assignedNotes.set(idx, [bassNote, harmonyNote]);
+            } else {
+                // Harmony Performers
+                // Pick 2 distinct notes from the pool, preferably in mid-high register
+                // Filter pool for higher notes (> root * 2)
+                const highPool = pool.filter(f => f > root * 2);
+
+                // Deterministic random based on index to avoid jitter
+                const r1 = (idx * 7 + this.currentChordIndex * 3) % highPool.length;
+                const r2 = (idx * 11 + this.currentChordIndex * 5) % highPool.length;
+
+                let n1 = highPool[r1];
+                let n2 = highPool[r2];
+
+                // If same, shift one
+                if (n1 === n2 && highPool.length > 1) {
+                    n2 = highPool[(r2 + 1) % highPool.length];
+                }
+
+                this.assignedNotes.set(idx, [n1, n2]);
+            }
+        });
+    }
+
+    /**
      * Updates audio parameters based on the state of all performers.
-     * Modifies frequency, filter cutoff, and gain.
      * @param {Performer[]} performers - Array of performer states.
      */
     update(performers) {
         if (!this.isReady) return;
         const now = this.ctx.currentTime;
 
-        // Determine active indices to assign roles
-        // Logic: Lowest active index = Bass, others = Harmony
-        const activeIdxs = [];
-        performers.forEach((p, i) => {
-            if (p.hasPerformer) activeIdxs.push(i);
-        });
+        // 1. Detect Composition Changes
+        const currentPresence = performers.map(p => p.hasPerformer);
+        let compositionChanged = false;
 
+        if (this.activePerformers.length !== currentPresence.length) {
+            compositionChanged = true;
+        } else {
+            for (let i = 0; i < currentPresence.length; i++) {
+                if (this.activePerformers[i] !== currentPresence[i]) {
+                    compositionChanged = true;
+                    break;
+                }
+            }
+        }
+
+        if (compositionChanged) {
+            this.activePerformers = [...currentPresence];
+            this._reassignNotes(currentPresence);
+        }
+
+        // 2. Update Voices
         performers.forEach((p, idx) => {
-            const v = this.voices[idx];
-            if (!v) return;
+            const voices = this.performerVoices[idx];
+            if (!voices) return;
 
+            const notes = this.assignedNotes.get(idx) || [CONFIG.audio.rootFreq, CONFIG.audio.rootFreq];
             const isActive = p.hasPerformer;
 
+            // Common Performer Params
+            // Expression Triangle controls Volume
+            // Height controls filter brightness? Or Volume?
+            // "Through the expression triangle they control the volume of both notes"
+            // Let's use Triangle Area or Height for Volume.
+            // Let's use Height (0..1).
+            const inputVol = THREE.MathUtils.clamp(p.triangle.height || 0.0, 0, 1);
+
+            // Panning controlled by Performer Data (Yaw)
+            // Yaw is approx -1.5 to 1.5 radians. Map to -1 to 1.
+            let panVal = THREE.MathUtils.clamp(p.current.yaw / 1.5, -0.9, 0.9);
+
+            // If virtual, maybe use position? Virtuals have yaw too.
+
+            // --- Voice 1 ---
+            const v1 = voices[0];
+            const freq1 = notes[0];
+
+            // --- Voice 2 ---
+            const v2 = voices[1];
+            const freq2 = notes[1];
+
             if (isActive) {
-                // Determine Role
-                const isBassRole = (activeIdxs.length > 0 && activeIdxs[0] === idx);
+                // --- Update Frequency ---
+                v1.osc1.frequency.setTargetAtTime(freq1, now, 0.1);
+                v1.osc2.frequency.setTargetAtTime(freq1 * 1.002, now, 0.1);
 
-                let targetFreq;
+                v2.osc1.frequency.setTargetAtTime(freq2, now, 0.1);
+                v2.osc2.frequency.setTargetAtTime(freq2 * 0.998, now, 0.1);
 
-                if (isBassRole) {
-                    // DRONE D BASS
-                    targetFreq = CONFIG.audio.rootFreq; // D2
+                // --- Update Volume & Filter ---
 
-                    // Highpass: let lows through
-                    v.highpass.frequency.setTargetAtTime(10, now, 0.2);
+                // Bass (Index 0) - Specific Rules
+                if (idx === 0) {
+                    // "Bass should ALWAYS be playing" -> imply constant volume for Bass Note?
+                    // "Bass's volume is fixed... panning is fixed"
 
-                    // Slightly louder for bass
-                     v.gain.gain.setTargetAtTime(0.6, now, 1.5);
+                    // Voice 1 (Bass Note)
+                    v1.gain.gain.setTargetAtTime(0.6, now, 0.1); // Fixed Volume
+                    v1.panner.pan.setTargetAtTime(0, now, 0.1);  // Fixed Center
+                    v1.highpass.frequency.setTargetAtTime(10, now, 0.2); // Full bass
+                    v1.filter.frequency.setTargetAtTime(3000, now, 0.2); // Moderate brightness
+
+                    // Voice 2 (Harmony Note assigned to Bass Player)
+                    // Controls apply to this note? "Each performer should control two notes"
+                    // But "Bass's volume is fixed". Does that mean *both* notes of P0?
+                    // Or just the Bass function?
+                    // "Bass should ALWAYS be playing... The other notes assigned to the performers aim to create beautiful chords"
+                    // I interpret this as: Voice 1 (True Bass) is fixed. Voice 2 (P0's chord note) is controlled like others.
+
+                    const vol2 = THREE.MathUtils.lerp(0, 0.5, inputVol);
+                    v2.gain.gain.setTargetAtTime(vol2, now, 0.1);
+                    // Panning for V2? "Bass is... fixed". Assuming P0's pan is fixed for both or just bass?
+                    // "Bass is, once again, fixed".
+                    // Let's keep P0 V2 somewhat centered or slightly wide to avoid mud.
+                    v2.panner.pan.setTargetAtTime(0, now, 0.1);
+                    v2.filter.frequency.setTargetAtTime(THREE.MathUtils.lerp(500, 6000, inputVol), now, 0.1);
+
                 } else {
-                    // HARMONY
-                    const ratio = p.noteRatio || 1.0;
-                    // Pitch up one octave
-                    targetFreq = CONFIG.audio.rootFreq * ratio * 2.0;
+                    // Other Performers
+                    // Volume controlled by expression
+                    const vol = THREE.MathUtils.lerp(0, 0.4, inputVol);
 
-                    // Highpass: Cut low end
-                    v.highpass.frequency.setTargetAtTime(300, now, 0.2);
+                    // Voice 1
+                    v1.gain.gain.setTargetAtTime(vol, now, 0.1);
+                    v1.filter.frequency.setTargetAtTime(THREE.MathUtils.lerp(500, 8000, inputVol), now, 0.1);
 
-                     // Volume for harmony
-                     v.gain.gain.setTargetAtTime(0.4, now, 1.5);
+                    // Voice 2
+                    v2.gain.gain.setTargetAtTime(vol, now, 0.1);
+                    v2.filter.frequency.setTargetAtTime(THREE.MathUtils.lerp(500, 8000, inputVol), now, 0.1);
+
+                    // Panning
+                    // "Both speakers get relatively equal levels of gain with different frequencies"
+                    // This suggests spreading the two voices of the performer.
+                    // If Performer Pan is P, maybe Voice 1 is P - width, Voice 2 is P + width?
+                    // Or Frequency-based panning (Haas effect or spectral panning)?
+                    // Let's try spreading them.
+                    const spread = 0.3;
+                    const p1 = Math.max(-1, Math.min(1, panVal - spread));
+                    const p2 = Math.max(-1, Math.min(1, panVal + spread));
+
+                    v1.panner.pan.setTargetAtTime(p1, now, 0.1);
+                    v2.panner.pan.setTargetAtTime(p2, now, 0.1);
                 }
 
-                // Apply Frequency with Portamento
-                v.osc1.frequency.setTargetAtTime(targetFreq, now, 0.1);
-                v.osc2.frequency.setTargetAtTime(targetFreq * 1.002, now, 0.1);
-
-                // We can still use height to modulate the Lowpass filter slightly for expression
-                // User snippet used fixed 8000Hz, but dynamic expression is "Evocative"
-                // Let's keep a bit of filter movement but keep it bright.
-                const minCutoff = 2000;
-                const maxCutoff = 10000;
-                const height = THREE.MathUtils.clamp(p.triangle.height || 0.5, 0, 1);
-                const cutoff = THREE.MathUtils.lerp(minCutoff, maxCutoff, height);
-                v.filter.frequency.setTargetAtTime(cutoff, now, 0.1);
-
             } else {
-                // Stop / Release
-                v.gain.gain.setTargetAtTime(0, now, 2.0); // Long tail release
+                // Mute
+                v1.gain.gain.setTargetAtTime(0, now, 1.0);
+                v2.gain.gain.setTargetAtTime(0, now, 1.0);
             }
         });
 
-        // Master LFO update (optional, keeps the pulse alive)
+        // Master LFO (Pulse) - Based on average BPM
         let weighted = 0;
         let totalWeight = 0;
         performers.forEach((p, idx) => {
             if (!p.hasPerformer) return;
-            const weight = 1;
-            weighted += p.current.bpmPref * weight;
-            totalWeight += weight;
+            weighted += p.current.bpmPref;
+            totalWeight += 1;
         });
         const bpm = totalWeight > 0 ? weighted / totalWeight : 60;
         let pulseHz = (bpm / 60) * 0.5;
