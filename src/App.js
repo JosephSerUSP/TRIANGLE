@@ -71,7 +71,7 @@ export class App {
         const overlay = document.getElementById('start-overlay');
         if (overlay) {
             overlay.addEventListener('click', async () => {
-                await this.audio.init(this.performers.length);
+                await this.audio.init();
                 this.audio.resume();
                 overlay.style.opacity = 0;
                 setTimeout(() => overlay.style.display = 'none', 500);

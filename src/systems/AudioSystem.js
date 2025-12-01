@@ -4,7 +4,7 @@ import { CONFIG } from '../core/Config.js';
 
 /**
  * Manages audio synthesis for the application.
- * Uses the Web Audio API to create voices and effects.
+ * Uses the Web Audio API to create specific instruments for "Shibuya Kei" aesthetic.
  */
 export class AudioSystem {
     /**
@@ -15,17 +15,19 @@ export class AudioSystem {
         this.isReady = false;
 
         this.masterGain = null;
-        this.masterPulse = null;
         this.compressor = null;
-        this.lfo = null;
-        this.lfoGain = null;
 
-        this.voices = [];
+        // Effects Bus
+        this.reverb = null;
+        this.delay = null;
+
+        // Instruments: Array of instrument objects
+        this.instruments = [];
     }
 
     /**
-     * Initializes the AudioContext, master effects, and voices.
-     * @param {number} voiceCount - The number of voices to create.
+     * Initializes the AudioContext, master effects, and instruments.
+     * @param {number} [voiceCount] - Unused, but kept for signature compatibility.
      * @async
      * @returns {Promise<void>}
      */
@@ -33,102 +35,210 @@ export class AudioSystem {
         const AudioContext = window.AudioContext || window.webkitAudioContext;
         this.ctx = new AudioContext();
 
+        // --- Master Chain ---
         this.compressor = this.ctx.createDynamicsCompressor();
-        this.compressor.threshold.value = -28;
-        this.compressor.knee.value = 24;
-        this.compressor.ratio.value = 3;
-        this.compressor.attack.value = 0.003;
-        this.compressor.release.value = 0.25;
-
-        this.masterPulse = this.ctx.createGain();
-        this.masterPulse.gain.value = 0.6;
+        this.compressor.threshold.value = -20;
+        this.compressor.knee.value = 10;
+        this.compressor.ratio.value = 4;
+        this.compressor.attack.value = 0.005;
+        this.compressor.release.value = 0.1;
 
         this.masterGain = this.ctx.createGain();
-        this.masterGain.gain.value = 0.8;
+        this.masterGain.gain.value = 0.7;
 
-        this.masterPulse.connect(this.masterGain);
-        this.masterGain.connect(this.compressor);
         this.compressor.connect(this.ctx.destination);
+        this.masterGain.connect(this.compressor);
 
-        this.lfo = this.ctx.createOscillator();
-        this.lfo.type = 'sine';
-        this.lfo.frequency.value = 0.5;
+        // --- Effects ---
+        // Simple Convolution Reverb (impulse response generation would be better, but we'll use a long release generic approach or a simple delay for now to save bandwidth)
+        // Let's make a simple Delay instead for the "City Pop" vibe.
+        this.delay = this.ctx.createDelay();
+        this.delay.delayTime.value = 0.3; // 300ms
+        const delayFeedback = this.ctx.createGain();
+        delayFeedback.gain.value = 0.3;
+        const delayFilter = this.ctx.createBiquadFilter();
+        delayFilter.type = 'lowpass';
+        delayFilter.frequency.value = 2000;
 
-        this.lfoGain = this.ctx.createGain();
-        this.lfoGain.gain.value = 0.4;
+        this.delay.connect(delayFeedback);
+        delayFeedback.connect(delayFilter);
+        delayFilter.connect(this.delay);
+        this.delay.connect(this.masterGain);
 
-        this.lfo.connect(this.lfoGain);
-        this.lfoGain.connect(this.masterPulse.gain);
-        this.lfo.start();
 
-        this.voices = [];
-        for (let i = 0; i < voiceCount; i++) {
-            const v = this._createVoice();
-            // Connect the end of the voice chain (filter) to master
-            v.filter.connect(this.masterPulse);
-            this.voices.push(v);
-        }
+        // --- Create Instruments (2 per performer -> 3 performers -> 6 instruments) ---
+        // P0 (Bass + Organ)
+        this.instruments.push(this._createInstrument('bass'));
+        this.instruments.push(this._createInstrument('organ'));
+
+        // P1 (EPiano + Pad)
+        this.instruments.push(this._createInstrument('epiano'));
+        this.instruments.push(this._createInstrument('pad'));
+
+        // P2 (Lead + Pluck)
+        this.instruments.push(this._createInstrument('lead'));
+        this.instruments.push(this._createInstrument('pluck'));
 
         this.isReady = true;
     }
 
     /**
-     * Creates a single audio voice (synthesizer).
+     * Creates a specific instrument voice based on type.
      * @private
-     * @returns {Object} The voice object containing oscillators and filters.
+     * @param {string} type - 'bass', 'organ', 'epiano', 'pad', 'lead', 'pluck'.
+     * @returns {Object} The instrument node graph.
      */
-    _createVoice() {
-        const v = {};
+    _createInstrument(type) {
+        const inst = { type, gain: this.ctx.createGain() };
+        inst.gain.gain.value = 0; // Start silent
 
-        // Oscillators
-        v.osc1 = this.ctx.createOscillator();
-        v.osc2 = this.ctx.createOscillator();
+        // Route to Master
+        inst.gain.connect(this.masterGain);
 
-        // Gain (VCA)
-        v.gain = this.ctx.createGain();
+        // Also route to Delay for some instruments
+        if (type === 'epiano' || type === 'lead' || type === 'pluck') {
+            const send = this.ctx.createGain();
+            send.gain.value = 0.2;
+            inst.gain.connect(send);
+            send.connect(this.delay);
+        }
 
-        // Filters
-        v.highpass = this.ctx.createBiquadFilter();
-        v.filter = this.ctx.createBiquadFilter(); // Lowpass
+        const now = this.ctx.currentTime;
 
-        // Configuration
-        v.osc1.type = 'sawtooth';
-        v.osc2.type = 'triangle';
+        switch (type) {
+            case 'bass': {
+                // Punchy Triangle/Saw Mix
+                inst.osc1 = this.ctx.createOscillator();
+                inst.osc1.type = 'triangle';
+                inst.osc2 = this.ctx.createOscillator();
+                inst.osc2.type = 'sawtooth';
 
-        v.osc1.frequency.value = CONFIG.audio.rootFreq;
-        v.osc2.frequency.value = CONFIG.audio.rootFreq;
+                inst.filter = this.ctx.createBiquadFilter();
+                inst.filter.type = 'lowpass';
+                inst.filter.Q.value = 2;
+                inst.filter.frequency.value = 400;
 
-        v.osc1.detune.value = 0;
-        v.osc2.detune.value = 4; // Slight detune as requested
+                inst.osc1.connect(inst.filter);
+                inst.osc2.connect(inst.filter);
+                inst.filter.connect(inst.gain);
 
-        v.gain.gain.value = 0.0;
+                inst.osc1.start();
+                inst.osc2.start();
+                break;
+            }
+            case 'organ': {
+                // Triangle with Tremolo
+                inst.osc1 = this.ctx.createOscillator();
+                inst.osc1.type = 'triangle';
 
-        // Highpass Setup
-        v.highpass.type = 'highpass';
-        v.highpass.frequency.value = 10; // Default to bypass (low)
-        v.highpass.Q.value = 0.7;
+                // Tremolo
+                inst.tremolo = this.ctx.createOscillator();
+                inst.tremolo.frequency.value = 6.0; // Hz
+                inst.tremoloGain = this.ctx.createGain();
+                inst.tremoloGain.gain.value = 200; // Depth
 
-        // Lowpass Setup
-        v.filter.type = 'lowpass';
-        v.filter.Q.value = 1.0;
-        v.filter.frequency.value = 8000; // Fixed High Brightness from snippet
+                inst.tremolo.connect(inst.tremoloGain);
+                // We want tremolo to affect volume or pitch?
+                // Leslie speaker affects both. Let's modulate gain slightly.
+                // Actually WebAudio AudioParam modulation is easiest on Gain.
+                // But let's modulate a secondary gain node.
+                inst.amp = this.ctx.createGain();
+                inst.amp.gain.value = 1.0;
 
-        // Routing: Osc -> Gain -> Highpass -> Lowpass -> Out
-        v.osc1.connect(v.gain);
-        v.osc2.connect(v.gain);
+                inst.osc1.connect(inst.amp);
+                inst.amp.connect(inst.gain);
 
-        v.gain.connect(v.highpass);
-        v.highpass.connect(v.filter);
+                // Connect LFO to Amp Gain
+                // Need to center it: gain = 1 + sin(t)*depth
+                // Standard WebAudio: connect to .gain adds to the base value.
+                inst.tremoloGain.connect(inst.amp.gain);
+                inst.tremoloGain.gain.value = 0.3;
 
-        v.osc1.start();
-        v.osc2.start();
+                inst.osc1.start();
+                inst.tremolo.start();
+                break;
+            }
+            case 'epiano': {
+                // FM Synthesis: Modulator -> Carrier
+                inst.carrier = this.ctx.createOscillator();
+                inst.carrier.type = 'sine';
 
-        return v;
+                inst.modulator = this.ctx.createOscillator();
+                inst.modulator.type = 'sine';
+
+                inst.modGain = this.ctx.createGain();
+                inst.modGain.gain.value = 300; // Modulation Index
+
+                inst.modulator.connect(inst.modGain);
+                inst.modGain.connect(inst.carrier.frequency);
+
+                inst.carrier.connect(inst.gain);
+
+                inst.carrier.start();
+                inst.modulator.start();
+                break;
+            }
+            case 'pad': {
+                // Detuned Sawtooths
+                inst.osc1 = this.ctx.createOscillator();
+                inst.osc1.type = 'sawtooth';
+                inst.osc2 = this.ctx.createOscillator();
+                inst.osc2.type = 'sawtooth';
+
+                inst.osc2.detune.value = 15; // Cents
+
+                inst.filter = this.ctx.createBiquadFilter();
+                inst.filter.type = 'lowpass';
+                inst.filter.frequency.value = 800;
+                inst.filter.Q.value = 0.5;
+
+                inst.osc1.connect(inst.filter);
+                inst.osc2.connect(inst.filter);
+                inst.filter.connect(inst.gain);
+
+                inst.osc1.start();
+                inst.osc2.start();
+                break;
+            }
+            case 'lead': {
+                // Square with Vibrato
+                inst.osc1 = this.ctx.createOscillator();
+                inst.osc1.type = 'square';
+
+                inst.vibrato = this.ctx.createOscillator();
+                inst.vibrato.frequency.value = 5.0;
+                inst.vibGain = this.ctx.createGain();
+                inst.vibGain.gain.value = 10; // Pitch modulation depth
+
+                inst.vibrato.connect(inst.vibGain);
+                inst.vibGain.connect(inst.osc1.frequency);
+
+                inst.filter = this.ctx.createBiquadFilter();
+                inst.filter.type = 'lowpass';
+                inst.filter.frequency.value = 2000;
+
+                inst.osc1.connect(inst.filter);
+                inst.filter.connect(inst.gain);
+
+                inst.osc1.start();
+                inst.vibrato.start();
+                break;
+            }
+            case 'pluck': {
+                // High Sine/Tri
+                inst.osc1 = this.ctx.createOscillator();
+                inst.osc1.type = 'triangle';
+
+                inst.osc1.connect(inst.gain);
+                inst.osc1.start();
+                break;
+            }
+        }
+        return inst;
     }
 
     /**
      * Resumes the AudioContext if it is suspended.
-     * Essential for starting audio after user interaction.
      */
     resume() {
         if (this.ctx && this.ctx.state === 'suspended') {
@@ -138,85 +248,130 @@ export class AudioSystem {
 
     /**
      * Updates audio parameters based on the state of all performers.
-     * Modifies frequency, filter cutoff, and gain.
      * @param {Performer[]} performers - Array of performer states.
      */
     update(performers) {
         if (!this.isReady) return;
         const now = this.ctx.currentTime;
 
-        // Determine active indices to assign roles
-        // Logic: Lowest active index = Bass, others = Harmony
-        const activeIdxs = [];
-        performers.forEach((p, i) => {
-            if (p.hasPerformer) activeIdxs.push(i);
-        });
+        // Performers: 0 (Bass/Organ), 1 (EPiano/Pad), 2 (Lead/Pluck)
+        // Instruments: 0,1 (P0) | 2,3 (P1) | 4,5 (P2)
 
-        performers.forEach((p, idx) => {
-            const v = this.voices[idx];
-            if (!v) return;
-
+        performers.forEach((p, pIdx) => {
             const isActive = p.hasPerformer;
+            const presence = p.presence; // 0 to 1
+            const ratio = p.noteRatio || 1.0;
+            const root = CONFIG.audio.rootFreq;
 
-            if (isActive) {
-                // Determine Role
-                const isBassRole = (activeIdxs.length > 0 && activeIdxs[0] === idx);
+            // Map performer data to params
+            // Roll: -PI/2 to PI/2
+            // Yaw: -PI/2 to PI/2 (Rotation)
+            // Height: 0 to 1
 
-                let targetFreq;
+            // Get the two instruments for this performer
+            const instA = this.instruments[pIdx * 2];
+            const instB = this.instruments[pIdx * 2 + 1];
 
-                if (isBassRole) {
-                    // DRONE D BASS
-                    targetFreq = CONFIG.audio.rootFreq; // D2
+            if (!instA || !instB) return;
 
-                    // Highpass: let lows through
-                    v.highpass.frequency.setTargetAtTime(10, now, 0.2);
+            if (!isActive) {
+                instA.gain.gain.setTargetAtTime(0, now, 0.5);
+                instB.gain.gain.setTargetAtTime(0, now, 0.5);
+                return;
+            }
 
-                    // Slightly louder for bass
-                     v.gain.gain.setTargetAtTime(0.6, now, 1.5);
-                } else {
-                    // HARMONY
-                    const ratio = p.noteRatio || 1.0;
-                    // Pitch up one octave
-                    targetFreq = CONFIG.audio.rootFreq * ratio * 2.0;
+            // --- Common Pitch Logic ---
+            // Calculate base frequency based on ratio
+            // Quantize pitch changes to avoid sliding (unless desired)
+            // But we use setTargetAtTime which smooths.
 
-                    // Highpass: Cut low end
-                    v.highpass.frequency.setTargetAtTime(300, now, 0.2);
+            // Performer 0: Bass (Inst 0) + Organ (Inst 1)
+            if (pIdx === 0) {
+                // Bass Frequency: Root * Ratio (Keep low)
+                // If ratio is > 2, maybe drop octave
+                const bassFreq = (root * ratio) > 150 ? (root * ratio) * 0.5 : (root * ratio);
+                instA.osc1.frequency.setTargetAtTime(bassFreq, now, 0.05);
+                instA.osc2.frequency.setTargetAtTime(bassFreq * 1.005, now, 0.05); // Detune
 
-                     // Volume for harmony
-                     v.gain.gain.setTargetAtTime(0.4, now, 1.5);
-                }
+                // Bass Filter: Open with height
+                const bassCutoff = THREE.MathUtils.lerp(200, 1500, p.triangle.height);
+                instA.filter.frequency.setTargetAtTime(bassCutoff, now, 0.1);
 
-                // Apply Frequency with Portamento
-                v.osc1.frequency.setTargetAtTime(targetFreq, now, 0.1);
-                v.osc2.frequency.setTargetAtTime(targetFreq * 1.002, now, 0.1);
+                // Bass Volume
+                instA.gain.gain.setTargetAtTime(0.6 * presence, now, 0.1);
 
-                // We can still use height to modulate the Lowpass filter slightly for expression
-                // User snippet used fixed 8000Hz, but dynamic expression is "Evocative"
-                // Let's keep a bit of filter movement but keep it bright.
-                const minCutoff = 2000;
-                const maxCutoff = 10000;
-                const height = THREE.MathUtils.clamp(p.triangle.height || 0.5, 0, 1);
-                const cutoff = THREE.MathUtils.lerp(minCutoff, maxCutoff, height);
-                v.filter.frequency.setTargetAtTime(cutoff, now, 0.1);
 
-            } else {
-                // Stop / Release
-                v.gain.gain.setTargetAtTime(0, now, 2.0); // Long tail release
+                // Organ Frequency: Root * Ratio * 2 or 4
+                const organFreq = root * ratio * 4.0;
+                instB.osc1.frequency.setTargetAtTime(organFreq, now, 0.05);
+
+                // Organ Tremolo Rate: Controlled by Roll
+                // Roll is approx -1 to 1. Map to 3Hz - 10Hz
+                const rollNorm = (p.current.roll + 1) / 2; // 0 to 1
+                const tremRate = THREE.MathUtils.lerp(3, 10, rollNorm);
+                instB.tremolo.frequency.setTargetAtTime(tremRate, now, 0.2);
+
+                // Organ Volume
+                instB.gain.gain.setTargetAtTime(0.4 * presence, now, 0.1);
+            }
+
+            // Performer 1: EPiano (Inst 2) + Pad (Inst 3)
+            else if (pIdx === 1) {
+                // EPiano Frequency
+                const epFreq = root * ratio * 4.0;
+                instA.carrier.frequency.setTargetAtTime(epFreq, now, 0.05);
+                // FM Ratio 1:2 is bell-like
+                instA.modulator.frequency.setTargetAtTime(epFreq * 2.0, now, 0.05);
+                // FM Index: Controlled by Height (Brightness)
+                const fmIdx = THREE.MathUtils.lerp(100, 1000, p.triangle.height);
+                instA.modGain.gain.setTargetAtTime(fmIdx, now, 0.1);
+
+                instA.gain.gain.setTargetAtTime(0.5 * presence, now, 0.1);
+
+
+                // Pad Frequency
+                const padFreq = root * ratio * 2.0;
+                instB.osc1.frequency.setTargetAtTime(padFreq, now, 0.1);
+                instB.osc2.frequency.setTargetAtTime(padFreq * 1.002, now, 0.1);
+
+                // Pad Filter: Controlled by Yaw
+                // Yaw approx -1 to 1
+                const yawNorm = (THREE.MathUtils.clamp(p.current.yaw, -1, 1) + 1) / 2;
+                const padCutoff = THREE.MathUtils.lerp(400, 4000, yawNorm);
+                instB.filter.frequency.setTargetAtTime(padCutoff, now, 0.5); // Slow sweep
+
+                instB.gain.gain.setTargetAtTime(0.3 * presence, now, 0.5);
+            }
+
+            // Performer 2: Lead (Inst 4) + Pluck (Inst 5)
+            else if (pIdx === 2) {
+                // Lead Frequency
+                const leadFreq = root * ratio * 8.0; // High
+                instA.osc1.frequency.setTargetAtTime(leadFreq, now, 0.05);
+
+                // Lead Vibrato: Depth controlled by Roll
+                const vibDepth = Math.abs(p.current.roll) * 20;
+                instA.vibGain.gain.setTargetAtTime(vibDepth, now, 0.1);
+
+                // Lead Filter
+                instA.filter.frequency.setTargetAtTime(THREE.MathUtils.lerp(1000, 8000, p.triangle.height), now, 0.1);
+
+                instA.gain.gain.setTargetAtTime(0.3 * presence, now, 0.1);
+
+
+                // Pluck Frequency (Arp-ish behavior could go here, but using LFO for pulse)
+                // Let's make it sparkle at very high freq
+                const pluckFreq = root * ratio * 16.0;
+                instB.osc1.frequency.setTargetAtTime(pluckFreq, now, 0.05);
+
+                // Pulse the volume with an internal LFO concept?
+                // Or just use Yaw to gate it.
+                // Let's use BPM Pref to pulse it?
+                // Creating a pulse in the update loop is hard without a clock.
+                // We'll just map volume to a mix of presence and Yaw.
+                const yawAbs = Math.abs(p.current.yaw); // 0 to 1ish
+                instB.gain.gain.setTargetAtTime(0.2 * presence * yawAbs, now, 0.1);
             }
         });
-
-        // Master LFO update (optional, keeps the pulse alive)
-        let weighted = 0;
-        let totalWeight = 0;
-        performers.forEach((p, idx) => {
-            if (!p.hasPerformer) return;
-            const weight = 1;
-            weighted += p.current.bpmPref * weight;
-            totalWeight += weight;
-        });
-        const bpm = totalWeight > 0 ? weighted / totalWeight : 60;
-        let pulseHz = (bpm / 60) * 0.5;
-        pulseHz = THREE.MathUtils.clamp(pulseHz, CONFIG.audio.lfoRateMin, CONFIG.audio.lfoRateMax);
-        this.lfo.frequency.setTargetAtTime(pulseHz, now, 0.3);
     }
 }
