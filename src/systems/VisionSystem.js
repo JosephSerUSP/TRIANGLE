@@ -1,6 +1,12 @@
-// src/systems/VisionSystem.js
+import * as poseDetection from '@tensorflow-models/pose-detection';
+import * as tf from '@tensorflow/tfjs-core';
+// Register WebGL backend.
+import '@tensorflow/tfjs-backend-webgl';
 import { CONFIG } from '../core/Config.js';
 
+// ============================================================================
+// VISION SYSTEM (MoveNet multipose, but currently driving only performer 0)
+// ============================================================================
 /**
  * Handles video input and pose detection using TensorFlow.js MoveNet model.
  */
@@ -37,7 +43,6 @@ export class VisionSystem {
                 audio: false
             });
         } catch (err) {
-            console.warn("Falling back to default video constraints", err);
             stream = await navigator.mediaDevices.getUserMedia({ video: true, audio: false });
         }
         this.video.srcObject = stream;
@@ -50,23 +55,16 @@ export class VisionSystem {
             CONFIG.camera.height = this.video.videoHeight;
         }
 
-        // Wait for TFJS to be ready (assuming loaded via script tags as globals)
-        // In a pure build step we might import these, but the index.html loads them as globals.
-        // We access them via window or global scope.
-        if (typeof tf !== 'undefined') {
-            await tf.ready();
-            this.detector = await poseDetection.createDetector(
-                poseDetection.SupportedModels.MoveNet,
-                {
-                    modelType: poseDetection.movenet.modelType.MULTIPOSE_LIGHTNING,
-                    enableSmoothing: true,
-                    minPoseScore: 0.25
-                }
-            );
-            this.isReady = true;
-        } else {
-            console.error("TensorFlow.js not loaded");
-        }
+        await tf.ready();
+        this.detector = await poseDetection.createDetector(
+            poseDetection.SupportedModels.MoveNet,
+            {
+                modelType: poseDetection.movenet.modelType.MULTIPOSE_LIGHTNING,
+                enableSmoothing: true,
+                minPoseScore: 0.25
+            }
+        );
+        this.isReady = true;
     }
 
     /**
@@ -79,7 +77,6 @@ export class VisionSystem {
         try {
             return await this.detector.estimatePoses(this.video);
         } catch (e) {
-            // console.error(e);
             return [];
         }
     }

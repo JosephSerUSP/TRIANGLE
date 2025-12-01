@@ -1,8 +1,10 @@
-// src/graphics/LatticeViewport.js
 import * as THREE from 'three';
 import * as TWEEN from '@tweenjs/tween.js';
 import { CONFIG } from '../core/Config.js';
 
+// ============================================================================
+// LATTICE VIEWPORT (One per Performer)
+// ============================================================================
 /**
  * Manages the 3D scene rendering for a specific performer.
  * Handles the lattice grid and the performer's triangular representation.
@@ -189,20 +191,6 @@ export class LatticeViewport {
 
         const progress = { value: 0 };
 
-        // Handle case where TWEEN might not be initialized if imported differently,
-        // though we imported it at top.
-        if (!TWEEN || !TWEEN.Tween) {
-             for (let v = 0; v < vertexCount; v++) {
-                posAttr.setXYZ(v,
-                    finalPos[v * 3],
-                    finalPos[v * 3 + 1],
-                    finalPos[v * 3 + 2]
-                );
-            }
-            posAttr.needsUpdate = true;
-            return;
-        }
-
         new TWEEN.Tween(progress)
             .to({ value: 1 }, duration)
             .easing(TWEEN.Easing.Exponential.Out)
@@ -236,9 +224,9 @@ export class LatticeViewport {
      * Updates shader uniforms and mesh positions.
      * @param {THREE.WebGLRenderer} renderer - The Three.js renderer.
      * @param {Object} rect - The viewport rectangle {x, y, width, height}.
-     * @param {Performer} performer - The state of the performer to render.
+     * @param {PerformerState} performerState - The state of the performer to render.
      */
-    render(renderer, rect, performer) {
+    render(renderer, rect, performerState) {
         const { x, y, width, height } = rect;
         renderer.setViewport(x, y, width, height);
         renderer.setScissor(x, y, width, height);
@@ -249,26 +237,26 @@ export class LatticeViewport {
 
         const now = performance.now() * 0.001;
         this.uniforms.uTime.value = now;
-        this.uniforms.uPhaseZ.value = performer.current.phaseZ;
+        this.uniforms.uPhaseZ.value = performerState.current.phaseZ;
 
         const rot = this.uniforms.uRotation.value;
         rot.set(
-            performer.current.pitch,
-            performer.current.yaw,
-            performer.current.roll
+            performerState.current.pitch,
+            performerState.current.yaw,
+            performerState.current.roll
         );
 
         // Color intensity: bright if active, dim if not
-        const base = performer.baseColor;
-        const intensity = performer.hasPerformer ? 1.0 : 0.18;
+        const base = performerState.baseColor;
+        const intensity = performerState.hasPerformer ? 1.0 : 0.18;
         this.uniforms.uColor.value.setRGB(
             base.r * intensity,
             base.g * intensity,
             base.b * intensity
         );
 
-        const tri = performer.triangle;
-        if (tri.visible && performer.hasPerformer) {
+        const tri = performerState.triangle;
+        if (tri.visible && performerState.hasPerformer) {
             this.triMesh.visible = true;
             this.triWire.visible = true;
 

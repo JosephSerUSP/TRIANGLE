@@ -38,15 +38,6 @@
         }
         video { display: none; }
     </style>
-
-    <script type="importmap">
-        {
-            "imports": {
-                "three": "https://cdn.jsdelivr.net/npm/three@0.160.0/build/three.module.js",
-                "@tweenjs/tween.js": "https://cdn.jsdelivr.net/npm/@tweenjs/tween.js@23.1.1/dist/tween.esm.js"
-            }
-        }
-    </script>
 </head>
 <body>
 
@@ -63,13 +54,6 @@
     <canvas id="debug-layer"></canvas>
     <video id="video" playsinline></video>
 
-    <!-- Globals for TFJS / Pose-Detection / TWEEN (UMD) -->
-    <script src="https://cdn.jsdelivr.net/npm/@tensorflow/tfjs-core@4.15.0/dist/tf-core.min.js"></script>
-    <script src="https://cdn.jsdelivr.net/npm/@tensorflow/tfjs-converter@4.15.0/dist/tf-converter.min.js"></script>
-    <script src="https://cdn.jsdelivr.net/npm/@tensorflow/tfjs-backend-webgl@4.15.0/dist/tf-backend-webgl.min.js"></script>
-    <script src="https://cdn.jsdelivr.net/npm/@tensorflow-models/pose-detection@2.1.3/dist/pose-detection.min.js"></script>
-    <script src="https://cdn.jsdelivr.net/npm/@tweenjs/tween.js@23.1.1/dist/tween.umd.js"></script>
-
-    <script type="module" src="./src/main.js"></script>
+    <script type="module" src="/src/main.js"></script>
 </body>
 </html>

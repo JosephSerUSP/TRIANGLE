@@ -1,18 +1,13 @@
-// src/App.js
 import * as THREE from 'three';
 import * as TWEEN from '@tweenjs/tween.js';
-
-import { CONFIG } from './core/Config.js';
-import { PERFORMER_COLORS } from './core/Constants.js';
-
 import { VisionSystem } from './systems/VisionSystem.js';
-import { AutopilotSystem } from './systems/AutopilotSystem.js';
 import { AudioSystem } from './systems/AudioSystem.js';
-
-import { Performer } from './state/Performer.js';
-
+import { Autopilot } from './systems/Autopilot.js';
 import { LatticeViewport } from './graphics/LatticeViewport.js';
 import { DebugOverlay } from './ui/DebugOverlay.js';
+import { PerformerState } from './state/PerformerState.js';
+import { InputMapper } from './state/InputMapper.js';
+import { PERFORMER_COLORS } from './data/Constants.js';
 
 /**
  * Main application class.
@@ -23,38 +18,26 @@ export class App {
      * Creates a new App instance and initializes the scene.
      */
     constructor() {
-        // --- 1. DATA/INPUT LAYER ---
         this.vision = new VisionSystem(document.getElementById('video'));
-        // Autopilot controls performers 1 and 2
-        this.autopilot = new AutopilotSystem([1, 2]);
 
-        // --- 2. PERFORMER LAYER ---
         this.performers = [
-            new Performer(PERFORMER_COLORS[0], true),  // Performer 0: Physical (Bass)
-            new Performer(PERFORMER_COLORS[1], false), // Performer 1: Virtual A
-            new Performer(PERFORMER_COLORS[2], false)  // Performer 2: Virtual B
+            new PerformerState(PERFORMER_COLORS[0], true),
+            new PerformerState(PERFORMER_COLORS[1], false),
+            new PerformerState(PERFORMER_COLORS[2], false)
         ];
 
-        // --- 3. OUTPUT LAYER ---
         this.audio = new AudioSystem();
+        this.autopilot = new Autopilot(this.performers, [1, 2]);
 
-        // Graphics Setup
         this.renderer = new THREE.WebGLRenderer({ antialias: true, alpha: false });
         this.renderer.setPixelRatio(Math.min(window.devicePixelRatio, 2));
         this.renderer.setSize(window.innerWidth, window.innerHeight);
 
-        const container = document.getElementById('canvas-container');
-        if (container) {
-             container.appendChild(this.renderer.domElement);
-        } else {
-            console.error("Canvas container not found!");
-        }
-
+        document.getElementById('canvas-container').appendChild(this.renderer.domElement);
         window.addEventListener('resize', () => {
             this.renderer.setSize(window.innerWidth, window.innerHeight);
         });
 
-        // Viewports "look at" specific performers
         this.viewports = this.performers.map(
             p => new LatticeViewport(p.color.getHex())
         );
@@ -71,14 +54,15 @@ export class App {
      */
     _wireAudioStartOverlay() {
         const overlay = document.getElementById('start-overlay');
-        if (overlay) {
-            overlay.addEventListener('click', async () => {
-                await this.audio.init(this.performers.length);
-                this.audio.resume();
-                overlay.style.opacity = 0;
-                setTimeout(() => overlay.style.display = 'none', 500);
-            }, { once: true });
-        }
+        const startHandler = async () => {
+             await this.audio.init(this.performers.length);
+             this.audio.resume();
+             overlay.style.opacity = 0;
+             setTimeout(() => overlay.style.display = 'none', 500);
+        };
+        overlay.addEventListener('click', startHandler, { once: true });
+        overlay.addEventListener('touchend', startHandler, { once: true });
+        window.addEventListener('keydown', startHandler, { once: true });
     }
 
     /**
@@ -113,7 +97,7 @@ export class App {
 
         let indicesToRender;
         if (activeIndices.length === 0) {
-            indicesToRender = [0]; // Default to first viewport if no one active
+            indicesToRender = [0];
         } else {
             indicesToRender = activeIndices.map(o => o.idx);
         }
@@ -139,35 +123,25 @@ export class App {
      * @async
      */
     async loop() {
-        // --- 1. GATHER DATA ---
-        const visionData = await this.vision.update(); // Returns Pose[]
-        const virtualData = this.autopilot.update();   // Returns { 1: data, 2: data }
+        const poses = await this.vision.update();
 
-        // --- 2. UPDATE PERFORMERS ---
+        // Update Physical Performer State
+        InputMapper.updatePerformerFromPoses(this.performers[0], poses);
 
-        // Performer 0 "looks at" Vision Data
-        this.performers[0].updateFromInput(visionData);
+        // Update Virtual Performers
+        this.autopilot.update();
 
-        // Performer 1 & 2 "look at" Virtual Data
-        this.performers[1].updateFromInput(virtualData[1]);
-        this.performers[2].updateFromInput(virtualData[2]);
-
-        // Run internal physics/smoothing
+        // Update Physics for all
         this.performers.forEach(p => p.updatePhysics());
 
-        // --- 3. OUTPUT ---
-
-        // Audio "looks at" Performers
+        // Update Audio System (reads state)
         if (this.audio.isReady) {
             this.audio.update(this.performers);
         }
 
-        // Graphics "look at" Performers
         TWEEN.update();
         this._renderViewports();
-
-        // UI
-        this.debug.draw(visionData, this.performers);
+        this.debug.draw(poses, this.performers);
 
         requestAnimationFrame(() => this.loop());
     }

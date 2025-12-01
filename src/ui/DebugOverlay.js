@@ -1,6 +1,8 @@
-// src/ui/DebugOverlay.js
 import { CONFIG } from '../core/Config.js';
 
+// ============================================================================
+// DEBUG OVERLAY (Press "D" to toggle)
+// ============================================================================
 /**
  * Manages the debug overlay canvas.
  * Displays performance metrics and internal state when enabled.
@@ -34,7 +36,7 @@ export class DebugOverlay {
     /**
      * Draws debug information to the canvas.
      * @param {Array<Object>} poses - The detected poses.
-     * @param {Performer[]} performers - Array of performer states.
+     * @param {PerformerState[]} performers - Array of performer states.
      */
     draw(poses, performers) {
         this.ctx.clearRect(0, 0, this.canvas.width, this.canvas.height);

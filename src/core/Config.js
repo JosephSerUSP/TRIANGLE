@@ -1,5 +1,6 @@
-// src/core/Config.js
-
+// ============================================================================
+// CONFIGURATION
+// ============================================================================
 /**
  * Global configuration object for the application.
  * Controls camera settings, interaction limits, audio parameters, and visual properties.

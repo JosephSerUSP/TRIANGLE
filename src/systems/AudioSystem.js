@@ -1,7 +1,9 @@
-// src/systems/AudioSystem.js
 import * as THREE from 'three';
 import { CONFIG } from '../core/Config.js';
 
+// ============================================================================
+// AUDIO SYSTEM (Triad, one voice per performer)
+// ============================================================================
 /**
  * Manages audio synthesis for the application.
  * Uses the Web Audio API to create voices and effects.
@@ -123,7 +125,7 @@ export class AudioSystem {
     /**
      * Updates audio parameters based on the state of all performers.
      * Modifies frequency, filter cutoff, and gain.
-     * @param {Performer[]} performers - Array of performer objects.
+     * @param {PerformerState[]} performers - Array of performer states.
      */
     update(performers) {
         if (!this.isReady) return;
