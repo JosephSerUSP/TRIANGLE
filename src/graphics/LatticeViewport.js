@@ -33,9 +33,47 @@ export class LatticeViewport {
         this.triMesh = null;
         this.triWire = null;
 
+        this.maskScene = new THREE.Scene();
+        this.maskCamera = new THREE.OrthographicCamera(-1, 1, 1, -1, 0, 1);
+        this.maskMesh = null;
+        this._initMask();
+
         this._initLattice();
         this._initTriangle();
         this._animateInLattice(4000);
+    }
+
+    /**
+     * Initializes the stencil mask geometry.
+     * @private
+     */
+    _initMask() {
+        const geometry = new THREE.BufferGeometry();
+        // 4 vertices for the quad (tl, tr, bl, br)
+        const vertices = new Float32Array([
+            -1, 1, 0,  // TL
+             1, 1, 0,  // TR
+            -1, -1, 0, // BL
+             1, -1, 0  // BR
+        ]);
+        // Index for two triangles
+        const indices = [0, 2, 1, 1, 2, 3];
+
+        geometry.setAttribute('position', new THREE.BufferAttribute(vertices, 3));
+        geometry.setIndex(indices);
+
+        const material = new THREE.MeshBasicMaterial({
+            color: 0xffffff,
+            colorWrite: false,
+            depthWrite: false,
+            stencilWrite: true,
+            stencilFunc: THREE.AlwaysStencilFunc,
+            stencilRef: 1,
+            stencilZPass: THREE.ReplaceStencilOp
+        });
+
+        this.maskMesh = new THREE.Mesh(geometry, material);
+        this.maskScene.add(this.maskMesh);
     }
 
     /**
@@ -81,6 +119,9 @@ export class LatticeViewport {
         const material = new THREE.ShaderMaterial({
             uniforms: this.uniforms,
             transparent: true,
+            stencilWrite: true,
+            stencilFunc: THREE.EqualStencilFunc,
+            stencilRef: 1,
             vertexShader: `
                 attribute float isLongitudinal;
                 uniform vec3 uRotation;
@@ -153,7 +194,10 @@ export class LatticeViewport {
             transparent: true,
             opacity: 0.12,
             side: THREE.DoubleSide,
-            depthTest: false
+            depthTest: false,
+            stencilWrite: true,
+            stencilFunc: THREE.EqualStencilFunc,
+            stencilRef: 1
         });
 
         const wireMat = new THREE.MeshBasicMaterial({
@@ -161,7 +205,10 @@ export class LatticeViewport {
             wireframe: true,
             transparent: true,
             opacity: 0.6,
-            depthTest: false
+            depthTest: false,
+            stencilWrite: true,
+            stencilFunc: THREE.EqualStencilFunc,
+            stencilRef: 1
         });
 
         this.triMesh = new THREE.Mesh(triGeom, triMat);
@@ -231,20 +278,84 @@ export class LatticeViewport {
 
     /**
      * Renders the scene for this viewport.
-     * Sets the scissor test and viewport area on the renderer.
-     * Updates shader uniforms and mesh positions.
+     * Uses stencil buffer to mask the viewport area based on the corners.
      * @param {THREE.WebGLRenderer} renderer - The Three.js renderer.
-     * @param {Object} rect - The viewport rectangle {x, y, width, height}.
+     * @param {Object} rect - The viewport bounding box {x, y, width, height}.
      * @param {Performer} performer - The state of the performer to render.
+     * @param {Object} [corners] - The 4 corners of the mask {tl, tr, bl, br} in pixels.
      */
-    render(renderer, rect, performer) {
+    render(renderer, rect, performer, corners) {
         const { x, y, width, height } = rect;
-        renderer.setViewport(x, y, width, height);
+
+        // 1. Setup Mask
+        if (corners) {
+            const screenW = renderer.domElement.width / renderer.getPixelRatio();
+            const screenH = renderer.domElement.height / renderer.getPixelRatio();
+
+            // Map pixel coordinates to NDC (-1 to 1)
+            // Note: GL coordinates, Y is up. Screen Y is down usually, but let's check input.
+            // Typically in Three.js window coordinates: (0,0) is top-left.
+            // But for viewport/scissor, (0,0) is bottom-left.
+            // Let's assume corners are passed in standard screen coords (0,0 top-left) for X,
+            // but we need to map to NDC.
+            // Wait, App.js logic for corners needs to be consistent.
+            // Let's assume corners are x-coordinates (pixels).
+
+            const toNDC = (px, py) => {
+                return {
+                    x: (px / screenW) * 2 - 1,
+                    y: -(py / screenH) * 2 + 1
+                };
+            };
+
+            const positions = this.maskMesh.geometry.attributes.position.array;
+
+            // TL
+            let ndc = toNDC(corners.tl, 0);
+            positions[0] = ndc.x;
+            positions[1] = ndc.y;
+
+            // TR
+            ndc = toNDC(corners.tr, 0);
+            positions[3] = ndc.x;
+            positions[4] = ndc.y;
+
+            // BL
+            ndc = toNDC(corners.bl, screenH);
+            positions[6] = ndc.x;
+            positions[7] = ndc.y;
+
+            // BR
+            ndc = toNDC(corners.br, screenH);
+            positions[9] = ndc.x;
+            positions[10] = ndc.y;
+
+            this.maskMesh.geometry.attributes.position.needsUpdate = true;
+        }
+
+        // 2. Render Mask to Stencil
+        renderer.autoClear = false;
+        renderer.clearStencil();
+
+        // Disable color/depth write globally for mask pass (handled by material but good to be safe)
+        // Actually material settings handle it.
+
+        // We render the mask fullscreen (camera is -1 to 1)
+        // But we want to limit processing to the scissor rect if possible?
+        // Yes, we can keep using setScissor for the bounding box.
+        renderer.setViewport(0, 0, window.innerWidth, window.innerHeight);
         renderer.setScissor(x, y, width, height);
         renderer.setScissorTest(true);
 
+        renderer.render(this.maskScene, this.maskCamera);
+
+        // 3. Render Scene
+        // Update uniforms
         this.camera.aspect = width / height;
         this.camera.updateProjectionMatrix();
+        // Camera viewport should match the scissor rect effectively
+        // but since we are masking with stencil, we can just set viewport to the rect.
+        renderer.setViewport(x, y, width, height);
 
         const now = performance.now() * 0.001;
         this.uniforms.uTime.value = now;

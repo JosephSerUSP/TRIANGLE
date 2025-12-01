@@ -22,6 +22,7 @@ export class Performer {
         this.isVirtual = isVirtual;
 
         this.hasPerformer = false;
+        this.presence = 0.0;
         this.noteRatio = 1.0;
 
         this.current = {
@@ -237,5 +238,12 @@ export class Performer {
         this.current.depth = THREE.MathUtils.lerp(this.current.depth, this.target.depth, CONFIG.depthSmoothing);
         this.current.phaseZ = this.current.depth * CONFIG.grid.phaseScale;
         this.current.bpmPref = THREE.MathUtils.lerp(this.current.bpmPref, this.target.bpmPref, 0.05);
+
+        // Presence logic for smooth transitions
+        const targetPresence = this.hasPerformer ? 1.0 : 0.0;
+        this.presence = THREE.MathUtils.lerp(this.presence, targetPresence, 0.05);
+        if (Math.abs(this.presence - targetPresence) < 0.001) {
+            this.presence = targetPresence;
+        }
     }
 }
