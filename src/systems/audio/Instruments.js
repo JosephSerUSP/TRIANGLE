@@ -30,6 +30,51 @@ export class Synthesizer {
     }
 }
 
+export class KickDrum extends Synthesizer {
+    constructor(ctx, destination) {
+        super(ctx, destination);
+        // Kick usually center, but we keep the architecture consistent
+        this.output.gain.value = 1.0;
+    }
+
+    /**
+     * @param {number} time
+     * @param {number} velocity - Overall volume
+     * @param {number} tone - 0.0 (timid, soft) to 1.0 (pounding, punchy)
+     */
+    playNote(time, velocity = 1.0, tone = 0.5) {
+        const osc = this.ctx.createOscillator();
+        const gain = this.ctx.createGain();
+
+        // Pounding kicks need higher start freq for the sweep (click)
+        // Timid: 80Hz -> 40Hz
+        // Pounding: 200Hz -> 40Hz
+        const startFreq = 80 + (tone * 140);
+        const endFreq = 40;
+        const decay = 0.2 + (tone * 0.3); // Longer body for pounding kicks
+
+        osc.frequency.setValueAtTime(startFreq, time);
+        osc.frequency.exponentialRampToValueAtTime(endFreq, time + 0.1);
+
+        // Saturation/Distortion for "pounding" feel?
+        // For now, just volume curve.
+
+        // Envelope
+        // Timid: Slower attack to hide click? No, kick always fast attack.
+        // Just lower volume and less high-freq sweep.
+
+        osc.connect(gain);
+        gain.connect(this.output);
+
+        osc.start(time);
+
+        gain.gain.setValueAtTime(velocity, time);
+        gain.gain.exponentialRampToValueAtTime(0.001, time + decay);
+
+        osc.stop(time + decay + 0.1);
+    }
+}
+
 export class PulseBass extends Synthesizer {
     constructor(ctx, destination) {
         super(ctx, destination);
@@ -109,32 +154,39 @@ export class StringPad extends Synthesizer {
     playNote(freq, time, duration, velocity) {
         const osc1 = this.ctx.createOscillator();
         const osc2 = this.ctx.createOscillator();
+        const osc3 = this.ctx.createOscillator(); // Added 3rd osc for richness
+
         osc1.type = 'sawtooth';
         osc2.type = 'sawtooth';
+        osc3.type = 'triangle'; // Sub/warmth
 
         osc1.frequency.value = freq;
-        osc2.frequency.value = freq * 1.002; // Detune
+        osc2.frequency.value = freq * 1.002; // Detune up
+        osc3.frequency.value = freq * 0.998; // Detune down
 
         const gain = this.ctx.createGain();
 
         osc1.connect(gain);
         osc2.connect(gain);
-        gain.connect(this.filter); // Connect to the class-wide filter
+        osc3.connect(gain);
+        gain.connect(this.filter);
 
         const attack = 0.5;
         const release = 1.0;
 
         osc1.start(time);
         osc2.start(time);
+        osc3.start(time);
 
         gain.gain.setValueAtTime(0, time);
-        // Increased velocity scalar from 0.3 to 0.6
-        gain.gain.linearRampToValueAtTime(velocity * 0.6, time + attack);
-        gain.gain.setValueAtTime(velocity * 0.6, time + duration);
+        // Increased velocity scalar
+        gain.gain.linearRampToValueAtTime(velocity * 0.5, time + attack); // Divided by 3 oscs roughly
+        gain.gain.setValueAtTime(velocity * 0.5, time + duration);
         gain.gain.linearRampToValueAtTime(0, time + duration + release);
 
         osc1.stop(time + duration + release);
         osc2.stop(time + duration + release);
+        osc3.stop(time + duration + release);
     }
 }
 
