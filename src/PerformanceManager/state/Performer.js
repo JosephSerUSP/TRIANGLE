@@ -1,78 +1,83 @@
-// src/state/Performer.js
+// src/PerformanceManager/state/Performer.js
 import * as THREE from 'three';
 import { CONFIG } from '../../core/Config.js';
-import { BEAUTIFUL_INTERVALS } from '../../core/Constants.js';
 
 /**
- * Manages the state of a single performer (either physical or virtual).
- * Handles position, rotation, and musical properties.
- * Decoupled from input source: receives data via update methods.
+ * Manages the state of a single performer.
+ * Represents the physical reality of a tracked person or virtual agent.
+ * Decoupled from musical/visual interpretation.
  */
 export class Performer {
     /**
      * Creates a new Performer instance.
+     * @param {string} id - Unique identifier for the performer.
      * @param {number|string} colorHex - The color of the performer in hex format.
-     * @param {boolean} [isBass=false] - Whether this performer controls the bass voice.
-     * @param {boolean} [isVirtual=false] - Whether this is a virtual performer.
      */
-    constructor(colorHex, isBass = false, isVirtual = false) {
+    constructor(id, colorHex) {
+        this.id = id;
         this.color = new THREE.Color(colorHex);
         this.baseColor = this.color.clone();
-        this.isBass = isBass;
-        this.isVirtual = isVirtual;
 
         this.hasPerformer = false;
         this.presence = 0.0;
-        this.noteRatio = 1.0;
+        this.lastUpdate = performance.now();
 
+        // --- Physical State (Smoothed/Current) ---
+        // Position and Orientation in normalized 3D space
+        // x, y: -1 to 1 (screen space)
+        // depth: meters or relative units (negative = far)
         this.current = {
             roll: 0,
             pitch: 0,
             yaw: 0,
             depth: -5,
-            phaseZ: 0,
-            bpmPref: 80
+            x: 0,
+            y: 0,
+            phaseZ: 0
         };
 
+        // Target state (from input)
         this.target = {
             roll: 0,
             pitch: 0,
             yaw: 0,
             depth: -5,
-            bpmPref: 80
+            x: 0,
+            y: 0
         };
 
+        // --- Rich Motion Data ---
+        this.velocity = new THREE.Vector3();     // Rate of change of position/depth
+        this.acceleration = new THREE.Vector3(); // Rate of change of velocity
+        this.energy = 0.0;                       // Scalar energy metric (0-1)
+        this.centerOfMass = new THREE.Vector3(); // Normalized Center of Mass
+        this.size = 0.5;                         // Bounding box approximate size (0-1)
+
+        // Previous frame state for derivative calculations
+        this._prevPos = new THREE.Vector3(0, 0, -5);
+        this._prevVel = new THREE.Vector3();
+
+        // --- Gesture Data ---
+        // "Triangle" represents the relationship between hands and head/neck
         this.triangle = {
             visible: false,
-            v1: new THREE.Vector3(),
-            v2: new THREE.Vector3(),
-            v3: new THREE.Vector3(),
+            v1: new THREE.Vector3(), // Head/Neck
+            v2: new THREE.Vector3(), // Left Hand
+            v3: new THREE.Vector3(), // Right Hand
             area: 0,
             width: 0.5,
             height: 0.5
         };
+
+        // Raw Keypoints (optional storage)
+        this.keypoints = [];
     }
 
     /**
-     * Updates the performer state based on virtual input data from the AutopilotSystem.
-     * This method is called for virtual performers.
+     * Updates the performer state based on virtual input data.
      * @param {object} data - The virtual performance data.
-     * @param {boolean} data.hasPerformer - Whether the virtual performer is active.
-     * @param {number} data.roll - The target roll angle.
-     * @param {number} data.pitch - The target pitch angle.
-     * @param {number} data.yaw - The target yaw angle.
-     * @param {number} data.depth - The target depth position.
-     * @param {number} data.bpmPref - The preferred beats per minute.
-     * @param {number} data.noteRatio - The musical note ratio.
-     * @param {object} data.triangle - The state of the virtual triangle.
-     * @param {boolean} data.triangle.visible - Whether the triangle is visible.
-     * @param {number} data.triangle.width - The width of the triangle.
-     * @param {number} data.triangle.height - The height of the triangle.
-     * @param {number} data.triangle.area - The area of the triangle.
      */
     updateFromVirtualData(data) {
-        if (!this.isVirtual) return;
-
         this.hasPerformer = data.hasPerformer;
 
         if (!data.hasPerformer) {
@@ -84,21 +89,21 @@ export class Performer {
         this.target.pitch = data.pitch;
         this.target.yaw = data.yaw;
         this.target.depth = data.depth;
-        this.target.bpmPref = data.bpmPref;
-        this.noteRatio = data.noteRatio;
+
+        // Virtual data might not provide x/y position explicitly if it was just rotating
+        // We'll assume center if not provided
+        this.target.x = data.x !== undefined ? data.x : 0;
+        this.target.y = data.y !== undefined ? data.y : 0;
 
         this.triangle.visible = data.triangle.visible;
         this.triangle.width = data.triangle.width;
         this.triangle.height = data.triangle.height;
         this.triangle.area = data.triangle.area;
+        this.size = Math.sqrt(this.triangle.area); // Approx size
 
-        // Reconstruct vertices for visualization if needed (simplified)
-        // Note: The original code calculated vertices in Autopilot.
-        // We can reconstruct them here or pass them.
-        // For simplicity, we'll reconstruct based on width/height since Autopilot passed those.
+        // Reconstruct vertices for visualization
         if (this.triangle.visible) {
              const scale = 0.9;
-             // We can just use the generic shape derived from width/height
              // v1 top, v2 left, v3 right
              this.triangle.v1.set(0, this.triangle.height * scale, 0);
              this.triangle.v2.set(-this.triangle.width * scale, -this.triangle.height * scale, 0);
@@ -107,61 +112,10 @@ export class Performer {
     }
 
     /**
-     * Updates the performer state based on Physical Input Data (Vision Poses).
-     * @param {Array} poses - The array of poses from VisionSystem.
-     */
-    updateFromPose(poses) {
-        // If we are virtual but acting as physical (e.g. Autopilot disabled), we allow this.
-        // Ideally we should update isVirtual flag or ignore it.
-        // For now, let's respect isVirtual strictly, but the App might call this on virtual performers if we change App logic.
-        // Actually, App logic changes performers[1] to be "physical-capable" if autopilot is off?
-        // Or we just allow updateFromPose to run regardless, but usually it wasn't called.
-        // The original code had: if (this.isVirtual) return;
-        // If we want P1/P2 to be physical when autopilot is off, we must allow this method to run.
-
-        // But wait, the Performer constructor sets isVirtual.
-        // If we want dynamic behavior, we should check a passed flag or rely on App to call the right method.
-        // I will remove the strict isVirtual check here and rely on the caller.
-
-        const vW = CONFIG.camera.width;
-        const vH = CONFIG.camera.height;
-
-        if (!poses || poses.length === 0) {
-            this.hasPerformer = false;
-            this._resetTarget();
-            return;
-        }
-
-        // Logic moved from App._updatePhysicalFromPoses
-        let dominant = null;
-        let maxWidth = 0;
-        for (const pose of poses) {
-            const ls = pose.keypoints.find(k => k.name === 'left_shoulder');
-            const rs = pose.keypoints.find(k => k.name === 'right_shoulder');
-            if (ls && rs && ls.score > 0.3 && rs.score > 0.3) {
-                const w = Math.hypot(rs.x - ls.x, rs.y - ls.y);
-                if (w > maxWidth) {
-                    maxWidth = w;
-                    dominant = { pose, width: w, ls, rs };
-                }
-            }
-        }
-
-        if (!dominant) {
-            this.hasPerformer = false;
-            this._resetTarget();
-            return;
-        }
-
-        // Use the new single pose method
-        this.updateFromSinglePose(dominant.pose);
-    }
-
-    /**
      * Updates the performer state based on a single Physical Input Pose.
      * @param {Object} pose - A single pose object from VisionSystem.
      */
-    updateFromSinglePose(pose) {
+    updateFromPose(pose) {
         const vW = CONFIG.camera.width;
         const vH = CONFIG.camera.height;
 
@@ -174,18 +128,19 @@ export class Performer {
         const ls = pose.keypoints.find(k => k.name === 'left_shoulder');
         const rs = pose.keypoints.find(k => k.name === 'right_shoulder');
 
-        // Basic validation again just in case, though usually pre-filtered
+        // Basic validation
         if (!ls || !rs || ls.score <= 0.3 || rs.score <= 0.3) {
              this.hasPerformer = false;
              this._resetTarget();
              return;
         }
 
-        const width = Math.hypot(rs.x - ls.x, rs.y - ls.y);
-
         this.hasPerformer = true;
+        this.keypoints = pose.keypoints;
 
-        // --- Calculate Physics ---
+        // --- Calculate Physics Targets ---
+
+        const width = Math.hypot(rs.x - ls.x, rs.y - ls.y);
 
         // Yaw from shoulder tilt
         const dy = rs.y - ls.y;
@@ -193,7 +148,7 @@ export class Performer {
         if (!CONFIG.mirrored) tiltSignal *= -1;
         this.target.yaw = tiltSignal * CONFIG.interaction.maxYaw * 2.5;
 
-        // Pitch from vertical position
+        // Pitch from vertical position (Head/Shoulder height)
         const cy = (ls.y + rs.y) / 2;
         let ny = (cy / vH) * 2 - 1;
         this.target.pitch = -ny * CONFIG.interaction.maxPitch;
@@ -214,6 +169,19 @@ export class Performer {
         const safeMetric = Math.max(0.05, normMetric);
         this.target.depth = -(1.0 / safeMetric);
 
+        // Position (Center of Mass approx)
+        // Map to -1 to 1
+        const mapX = (val) => (val / vW) * 2 - 1;
+        const mapY = (val) => -((val / vH) * 2 - 1);
+        const xMult = CONFIG.mirrored ? -1 : 1;
+
+        const cx = (ls.x + rs.x) / 2;
+        this.target.x = mapX(cx) * xMult;
+        this.target.y = mapY(cy); // approximate Y with shoulder height
+
+        // Center of Mass (stored normalized)
+        this.centerOfMass.set(this.target.x, this.target.y, this.target.depth);
+
         // --- Calculate Triangle ---
         const lWrist = pose.keypoints.find(k => k.name === 'left_wrist');
         const rWrist = pose.keypoints.find(k => k.name === 'right_wrist');
@@ -223,11 +191,6 @@ export class Performer {
 
             const nx = (ls.x + rs.x) / 2;
             const nyNeck = (ls.y + rs.y) / 2;
-
-            const mapX = (val) => (val / vW) * 2 - 1;
-            const mapY = (val) => -((val / vH) * 2 - 1);
-
-            const xMult = CONFIG.mirrored ? -1 : 1;
 
             this.triangle.v1.set(mapX(nx) * xMult, mapY(nyNeck), 0);
             this.triangle.v2.set(mapX(lWrist.x) * xMult, mapY(lWrist.y), 0);
@@ -245,6 +208,7 @@ export class Performer {
                 nx * (lWrist.y - rWrist.y)
             );
             this.triangle.area = tArea / (vW * vH);
+            this.size = Math.sqrt(this.triangle.area);
 
             const dx = lWrist.x - rWrist.x;
             const dyH = lWrist.y - rWrist.y;
@@ -257,50 +221,78 @@ export class Performer {
             this.triangle.width = 0.5;
             this.triangle.height = 0.5;
             this.target.roll = 0;
+            this.size = 0.2; // default
         }
-
-        // --- Calculate Music Params ---
-        const w = THREE.MathUtils.clamp(this.triangle.width, 0, 1);
-        const h = THREE.MathUtils.clamp(this.triangle.height, 0, 1);
-
-        this.target.bpmPref = THREE.MathUtils.lerp(CONFIG.audio.bpmMax, CONFIG.audio.bpmMin, w);
-
-        const idx = Math.floor(h * BEAUTIFUL_INTERVALS.length);
-        const safeIdx = Math.min(BEAUTIFUL_INTERVALS.length - 1, Math.max(0, idx));
-        this.noteRatio = BEAUTIFUL_INTERVALS[safeIdx];
     }
 
     /**
      * Resets the target physics values to a default state.
-     * This is typically called when a performer is no longer detected.
      * @private
      */
     _resetTarget() {
         this.triangle.visible = false;
+        // Drift back to center/neutral
         this.target.roll = 0;
         this.target.pitch = 0;
         this.target.yaw = 0;
         this.target.depth = -10;
+        this.target.x = 0;
+        this.target.y = 0;
     }
 
     /**
      * Updates the current physical state by interpolating towards target values.
-     * Applies smoothing to roll, pitch, yaw, depth, and BPM.
+     * Calculates velocity, acceleration, and energy.
      */
     updatePhysics() {
+        const now = performance.now();
+        const dt = (now - this.lastUpdate) / 1000;
+        this.lastUpdate = now;
+
+        if (dt <= 0) return;
+
         const a = CONFIG.smoothing;
+
+        // Position/Orientation Smoothing
         this.current.roll = THREE.MathUtils.lerp(this.current.roll, this.target.roll, a);
         this.current.pitch = THREE.MathUtils.lerp(this.current.pitch, this.target.pitch, a);
         this.current.yaw = THREE.MathUtils.lerp(this.current.yaw, this.target.yaw, a);
         this.current.depth = THREE.MathUtils.lerp(this.current.depth, this.target.depth, CONFIG.depthSmoothing);
         this.current.phaseZ = this.current.depth * CONFIG.grid.phaseScale;
-        this.current.bpmPref = THREE.MathUtils.lerp(this.current.bpmPref, this.target.bpmPref, 0.05);
 
-        // Presence logic for smooth transitions
+        this.current.x = THREE.MathUtils.lerp(this.current.x, this.target.x, a);
+        this.current.y = THREE.MathUtils.lerp(this.current.y, this.target.y, a);
+
+        // Presence logic
         const targetPresence = this.hasPerformer ? 1.0 : 0.0;
         this.presence = THREE.MathUtils.lerp(this.presence, targetPresence, 0.05);
         if (Math.abs(this.presence - targetPresence) < 0.001) {
             this.presence = targetPresence;
         }
+
+        // --- Calculate Derivatives (Rich Data) ---
+        // Current position vector
+        const currentPos = new THREE.Vector3(this.current.x, this.current.y, this.current.depth);
+
+        // Velocity = (CurrentPos - PrevPos) / dt
+        const vel = currentPos.clone().sub(this._prevPos).divideScalar(dt);
+
+        // Acceleration = (Velocity - PrevVel) / dt
+        const accel = vel.clone().sub(this._prevVel).divideScalar(dt);
+
+        // Smooth velocity/accel slightly to reduce jitter
+        this.velocity.lerp(vel, 0.5);
+        this.acceleration.lerp(accel, 0.5);
+
+        // Energy: Combination of speed and size (activity level)
+        const speed = this.velocity.length();
+        // Normalize speed approx (0 to 5 units/sec?)
+        const normSpeed = Math.min(speed / 5.0, 1.0);
+
+        this.energy = THREE.MathUtils.lerp(this.energy, normSpeed, 0.1);
+
+        // Store history
+        this._prevPos.copy(currentPos);
+        this._prevVel.copy(this.velocity);
     }
 }
