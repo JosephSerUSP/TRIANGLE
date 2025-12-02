@@ -1,7 +1,7 @@
 // src/systems/AutopilotSystem.js
 import * as THREE from 'three';
-import { CONFIG } from '../core/Config.js';
-import { BEAUTIFUL_INTERVALS } from '../core/Constants.js';
+import { CONFIG } from '../../core/Config.js';
+import { BEAUTIFUL_INTERVALS } from '../../core/Constants.js';
 
 /**
  * Controls the behavior of virtual performers (autopilot mode).

@@ -1,7 +1,7 @@
 // src/graphics/LatticeViewport.js
 import * as THREE from 'three';
 import * as TWEEN from '@tweenjs/tween.js';
-import { CONFIG } from '../core/Config.js';
+import { CONFIG } from '../../core/Config.js';
 
 /**
  * Manages the 3D scene rendering for a specific performer.

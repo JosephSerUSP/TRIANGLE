@@ -1,4 +1,4 @@
-import { AudioSystem } from '../systems/AudioSystem.js';
+import { AudioSystem } from './audio/AudioSystem.js';
 
 /**
  * Manages the audio output of the performance.

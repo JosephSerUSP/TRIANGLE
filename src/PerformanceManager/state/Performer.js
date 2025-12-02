@@ -1,7 +1,7 @@
 // src/state/Performer.js
 import * as THREE from 'three';
-import { CONFIG } from '../core/Config.js';
-import { BEAUTIFUL_INTERVALS } from '../core/Constants.js';
+import { CONFIG } from '../../core/Config.js';
+import { BEAUTIFUL_INTERVALS } from '../../core/Constants.js';
 
 /**
  * Manages the state of a single performer (either physical or virtual).

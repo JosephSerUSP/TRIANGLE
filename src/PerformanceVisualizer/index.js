@@ -1,7 +1,7 @@
 import * as THREE from 'three';
 import * as TWEEN from '@tweenjs/tween.js';
-import { LatticeViewport } from '../graphics/LatticeViewport.js';
-import { DebugOverlay } from '../ui/DebugOverlay.js';
+import { LatticeViewport } from './graphics/LatticeViewport.js';
+import { DebugOverlay } from './ui/DebugOverlay.js';
 import { CONFIG } from '../core/Config.js';
 
 /**

@@ -1,5 +1,5 @@
 // src/systems/VisionSystem.js
-import { CONFIG } from '../core/Config.js';
+import { CONFIG } from '../../core/Config.js';
 
 /**
  * Handles video input and pose detection using TensorFlow.js MoveNet model.
