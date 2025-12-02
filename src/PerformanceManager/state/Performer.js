@@ -54,8 +54,21 @@ export class Performer {
     }
 
     /**
-     * Updates the performer state based on Virtual Input Data.
-     * @param {Object} data - The data object from AutopilotSystem.
+     * Updates the performer state based on virtual input data from the AutopilotSystem.
+     * This method is called for virtual performers.
+     * @param {object} data - The virtual performance data.
+     * @param {boolean} data.hasPerformer - Whether the virtual performer is active.
+     * @param {number} data.roll - The target roll angle.
+     * @param {number} data.pitch - The target pitch angle.
+     * @param {number} data.yaw - The target yaw angle.
+     * @param {number} data.depth - The target depth position.
+     * @param {number} data.bpmPref - The preferred beats per minute.
+     * @param {number} data.noteRatio - The musical note ratio.
+     * @param {object} data.triangle - The state of the virtual triangle.
+     * @param {boolean} data.triangle.visible - Whether the triangle is visible.
+     * @param {number} data.triangle.width - The width of the triangle.
+     * @param {number} data.triangle.height - The height of the triangle.
+     * @param {number} data.triangle.area - The area of the triangle.
      */
     updateFromVirtualData(data) {
         if (!this.isVirtual) return;
@@ -257,6 +270,11 @@ export class Performer {
         this.noteRatio = BEAUTIFUL_INTERVALS[safeIdx];
     }
 
+    /**
+     * Resets the target physics values to a default state.
+     * This is typically called when a performer is no longer detected.
+     * @private
+     */
     _resetTarget() {
         this.triangle.visible = false;
         this.target.roll = 0;

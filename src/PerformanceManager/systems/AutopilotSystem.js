@@ -66,8 +66,9 @@ export class AutopilotSystem {
     }
 
     /**
-     * Generates a base parameter object.
-     * @returns {Object}
+     * Generates a base parameter object representing an inactive performer.
+     * @private
+     * @returns {object} A data object with default values.
      */
     _generateBaseParams() {
         return {
@@ -215,9 +216,9 @@ export class AutopilotSystem {
     }
 
     /**
-     * Get the current data for a specific performer index.
-     * @param {number} idx
-     * @returns {Object|null}
+     * Gets the current performance data for a specific performer.
+     * @param {number} idx - The index of the performer.
+     * @returns {object|null} The performance data object, or null if not found.
      */
     getData(idx) {
         return this.data.get(idx) || null;

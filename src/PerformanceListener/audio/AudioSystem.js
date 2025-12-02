@@ -58,8 +58,10 @@ export class AudioSystem {
     }
 
     /**
-     * Initializes the AudioContext and instruments.
-     * @param {number} performerCount - Expected number of performers (should be 3).
+     * Initializes the AudioContext, master effects chain, and all instruments.
+     * This must be called after a user interaction gesture.
+     * @param {number} performerCount - The number of performers to initialize instruments for.
+     * @returns {Promise<void>}
      */
     async init(performerCount) {
         const AudioContext = window.AudioContext || window.webkitAudioContext;
@@ -174,7 +176,11 @@ export class AudioSystem {
     }
 
     /**
-     * Triggers notes for the specific time slot.
+     * Schedules all musical events for a specific 16th note time slot.
+     * This is the core of the sequencer logic.
+     * @private
+     * @param {number} beatNumber - The current 16th note index (0-15).
+     * @param {number} time - The precise AudioContext time to schedule the event.
      */
     _scheduleNote(beatNumber, time) {
         // Change chord every 4 bars
