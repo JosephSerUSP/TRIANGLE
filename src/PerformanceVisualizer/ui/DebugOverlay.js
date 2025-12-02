@@ -58,29 +58,18 @@ export class DebugOverlay {
 
         if (statusEl) {
             statusEl.style.display = 'block';
-            statusEl.innerText = performers[0].hasPerformer
-                ? 'TARGET ACQUIRED  (P0: Physical)'
-                : 'SCANNING SECTOR...';
+            statusEl.innerText = `ACTIVE PERFORMERS: ${performers.filter(p => p.hasPerformer).length}`;
         }
 
         if (metricsEl) {
             metricsEl.style.display = 'block';
             let text = '';
             performers.forEach((p, idx) => {
-                text += `P${idx} ${p.hasPerformer ? 'ON ' : 'off'}\n`;
-                text += `  depth: ${p.current.depth.toFixed(2)}  bpm: ${p.current.bpmPref.toFixed(1)}\n`;
+                text += `${p.id} ${p.hasPerformer ? 'ON ' : 'off'}\n`;
+                text += `  depth: ${p.current.depth.toFixed(2)}  energy: ${p.energy.toFixed(2)}\n`;
                 text += `  triA: ${p.triangle.area.toFixed(3)}  W: ${p.triangle.width.toFixed(2)}  H: ${p.triangle.height.toFixed(2)}\n`;
             });
             metricsEl.innerText = text;
-        }
-
-        // Optionally draw keypoints
-        if (poses && poses.length > 0) {
-             this.ctx.save();
-             this.ctx.scale(1, 1);
-             // Note: Mapping keypoints to screen space strictly requires knowing the video scaling,
-             // but for simple debug we can assume full screen or just skip drawing dots for now.
-             this.ctx.restore();
         }
     }
 }

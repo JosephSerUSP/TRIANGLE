@@ -30,10 +30,15 @@ export class PerformanceVisualizer {
             this.renderer.setSize(window.innerWidth, window.innerHeight);
         });
 
-        // Initialize viewports corresponding to performers
-        this.viewports = initialPerformers.map(
-            p => new LatticeViewport(p.color.getHex())
-        );
+        // Map<string, LatticeViewport>
+        this.viewports = new Map();
+
+        // Initialize viewports corresponding to initial performers
+        if (initialPerformers) {
+            initialPerformers.forEach(p => {
+                this.viewports.set(p.id, new LatticeViewport(p.color.getHex()));
+            });
+        }
 
         this.debug = new DebugOverlay('debug-layer');
     }
@@ -45,6 +50,24 @@ export class PerformanceVisualizer {
     update({ performers, poses }) {
         // Update Tweens
         TWEEN.update();
+
+        // Sync Viewports with Performers
+        // 1. Create new viewports
+        performers.forEach(p => {
+            if (!this.viewports.has(p.id)) {
+                this.viewports.set(p.id, new LatticeViewport(p.color.getHex()));
+            }
+        });
+
+        // 2. Remove stale viewports (if performer removed from list)
+        const currentIds = new Set(performers.map(p => p.id));
+        for (const [id, vp] of this.viewports) {
+            if (!currentIds.has(id)) {
+                // Perform cleanup on viewport if necessary (dispose geometries)
+                // vp.dispose();
+                this.viewports.delete(id);
+            }
+        }
 
         // Render Graphics
         this._renderViewports(performers);
@@ -71,7 +94,13 @@ export class PerformanceVisualizer {
 
         layout.forEach(item => {
             const { index, rect, corners } = item;
-            this.viewports[index].render(this.renderer, rect, performers[index], corners);
+            // Get performer by index in the array passed
+            const p = performers[index];
+            const vp = this.viewports.get(p.id);
+
+            if (vp) {
+                vp.render(this.renderer, rect, p, corners);
+            }
         });
     }
 
@@ -94,8 +123,6 @@ export class PerformanceVisualizer {
         const widths = performers.map(p => (p.presence / safeTotal) * width);
 
         // Calculate separator angles
-        // Line i (1 to N-1): x = sum(widths[0]...widths[i-1]). Angle = P[i-1].current.roll.
-
         const boundaries = [];
 
         // Left edge of screen

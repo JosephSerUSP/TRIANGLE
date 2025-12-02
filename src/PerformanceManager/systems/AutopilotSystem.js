@@ -1,7 +1,6 @@
-// src/systems/AutopilotSystem.js
+// src/PerformanceManager/systems/AutopilotSystem.js
 import * as THREE from 'three';
 import { CONFIG } from '../../core/Config.js';
-import { BEAUTIFUL_INTERVALS } from '../../core/Constants.js';
 
 /**
  * Controls the behavior of virtual performers (autopilot mode).
@@ -11,35 +10,35 @@ import { BEAUTIFUL_INTERVALS } from '../../core/Constants.js';
 export class AutopilotSystem {
     /**
      * Creates a new AutopilotSystem instance.
-     * @param {number[]} indices - Indices of the performers this system controls.
+     * @param {Array<string|number>} ids - IDs of the performers this system controls.
      */
-    constructor(indices) {
-        this.indices = indices;
+    constructor(ids) {
+        this.ids = ids;
 
-        // Map of performerIndex -> VirtualInputData
+        // Map of performerID -> VirtualInputData
         this.data = new Map();
 
         // Internal state for each managed performer
         this.states = new Map();
 
-        // Initialize noise offsets so performers don't move identically
-        this.indices.forEach(idx => {
-            this.states.set(idx, {
-                active: true, // Start active for immediate movement
+        // Initialize noise offsets
+        this.ids.forEach(id => {
+            this.states.set(id, {
+                active: true,
                 nextEventTime: performance.now() + this._randomDelay(),
-                // Unique offsets for noise functions
                 offsets: {
                     roll: Math.random() * 1000,
                     pitch: Math.random() * 1000,
                     yaw: Math.random() * 1000,
                     depth: Math.random() * 1000,
+                    x: Math.random() * 1000,
+                    y: Math.random() * 1000,
                     width: Math.random() * 1000,
                     height: Math.random() * 1000
                 },
-                // Current smooth values
                 current: this._generateBaseParams()
             });
-            this.data.set(idx, this._generateBaseParams());
+            this.data.set(id, this._generateBaseParams());
         });
     }
 
@@ -49,7 +48,6 @@ export class AutopilotSystem {
      * @returns {number} Delay in milliseconds.
      */
     _randomDelay() {
-        // Toggle state less frequently, stay in state for 10-20 seconds
         return 10000 + Math.random() * 10000;
     }
 
@@ -77,8 +75,8 @@ export class AutopilotSystem {
             pitch: 0,
             yaw: 0,
             depth: -10,
-            bpmPref: 60,
-            noteRatio: 1.0,
+            x: 0,
+            y: 0,
             triangle: {
                 visible: false,
                 width: 0.5,
@@ -90,47 +88,40 @@ export class AutopilotSystem {
 
     /**
      * Updates the movement for a single performer based on noise.
-     * @param {number} idx - Performer index.
+     * @param {string|number} id - Performer ID.
      * @param {number} time - Current time in seconds.
      */
-    _updateMovement(idx, time) {
-        const state = this.states.get(idx);
+    _updateMovement(id, time) {
+        const state = this.states.get(id);
         const offsets = state.offsets;
 
         // Generate smooth noise values
-        const nRoll = this._noise(time * 0.5, offsets.roll);   // Slow sway
-        const nPitch = this._noise(time * 0.3, offsets.pitch); // Slow nod
-        const nYaw = this._noise(time * 0.4, offsets.yaw);     // Slow turn
-        const nDepth = this._noise(time * 0.2, offsets.depth); // Slow approach/retreat
+        const nRoll = this._noise(time * 0.5, offsets.roll);
+        const nPitch = this._noise(time * 0.3, offsets.pitch);
+        const nYaw = this._noise(time * 0.4, offsets.yaw);
+        const nDepth = this._noise(time * 0.2, offsets.depth);
+        const nX = this._noise(time * 0.15, offsets.x);
+        const nY = this._noise(time * 0.15, offsets.y);
 
-        const nWidth = (this._noise(time * 0.6, offsets.width) + 1) / 2; // 0 to 1
-        const nHeight = (this._noise(time * 0.7, offsets.height) + 1) / 2; // 0 to 1
+        const nWidth = (this._noise(time * 0.6, offsets.width) + 1) / 2;
+        const nHeight = (this._noise(time * 0.7, offsets.height) + 1) / 2;
 
         // Map noise to valid ranges
-        // Roll: +/- 45 degrees
         const roll = nRoll * (Math.PI / 4);
-
-        // Pitch: +/- 20 degrees
         const pitch = nPitch * (Math.PI / 9);
-
-        // Yaw: +/- 60 degrees
         const yaw = nYaw * (Math.PI / 3);
-
-        // Depth: -8 to -2
         const depth = THREE.MathUtils.mapLinear(nDepth, -1, 1, -8, -2);
 
-        // Triangle Dimensions (Hand positions)
-        const width = THREE.MathUtils.mapLinear(nWidth, 0, 1, 0.3, 0.9); // Hands not touching but not too wide
-        const height = THREE.MathUtils.mapLinear(nHeight, 0, 1, 0.2, 0.8); // Vertical range
-        const area = width * height * 0.5; // Approx area
+        // Position on screen (-1 to 1)
+        // Spread them out a bit based on ID if possible, or just random wander
+        // Let's assume purely random wander around center
+        const x = nX * 0.8;
+        const y = nY * 0.5;
 
-        // Map width/height to music params
-        const bpmPref = THREE.MathUtils.lerp(CONFIG.audio.bpmMax, CONFIG.audio.bpmMin, width);
-
-        // Quantize height to intervals
-        const noteIdx = Math.floor(height * BEAUTIFUL_INTERVALS.length);
-        const safeIdx = Math.min(BEAUTIFUL_INTERVALS.length - 1, Math.max(0, noteIdx));
-        const noteRatio = BEAUTIFUL_INTERVALS[safeIdx];
+        // Triangle Dimensions
+        const width = THREE.MathUtils.mapLinear(nWidth, 0, 1, 0.3, 0.9);
+        const height = THREE.MathUtils.mapLinear(nHeight, 0, 1, 0.2, 0.8);
+        const area = width * height * 0.5;
 
         // Update the data packet
         const data = {
@@ -139,8 +130,8 @@ export class AutopilotSystem {
             pitch,
             yaw,
             depth,
-            bpmPref,
-            noteRatio,
+            x,
+            y,
             triangle: {
                 visible: true,
                 width,
@@ -149,7 +140,7 @@ export class AutopilotSystem {
             }
         };
 
-        this.data.set(idx, data);
+        this.data.set(id, data);
     }
 
     /**
@@ -158,36 +149,28 @@ export class AutopilotSystem {
      */
     _updateActivity(time) {
         const nowMs = time * 1000;
-
-        // Count active performers
         let activeCount = 0;
         this.states.forEach(s => { if (s.active) activeCount++; });
-        const total = this.indices.length;
+        const total = this.ids.length;
 
-        this.indices.forEach(idx => {
-            const state = this.states.get(idx);
+        this.ids.forEach(id => {
+            const state = this.states.get(id);
 
             if (nowMs >= state.nextEventTime) {
-                // Time to toggle or refresh state
-
-                // Bias towards staying active if few are active
                 let probStayActive = 0.8;
-                if (activeCount === 0) probStayActive = 1.0; // Force at least one to wake up if all asleep?
-                if (activeCount === total) probStayActive = 0.6; // Maybe let one sleep
+                if (activeCount === 0) probStayActive = 1.0;
+                if (activeCount === total) probStayActive = 0.6;
 
                 if (state.active) {
                     if (Math.random() > probStayActive) {
                         state.active = false;
-                        // When going inactive, send one "off" packet
-                        this.data.set(idx, this._generateBaseParams());
+                        this.data.set(id, this._generateBaseParams());
                     }
                 } else {
-                    // If inactive, high chance to wake up
                     if (Math.random() < 0.7) {
                         state.active = true;
                     }
                 }
-
                 state.nextEventTime = nowMs + this._randomDelay();
             }
         });
@@ -195,32 +178,21 @@ export class AutopilotSystem {
 
     /**
      * Updates the autopilot system.
-     * Called every frame.
      * @returns {Map} The latest data map.
      */
     update() {
-        const time = performance.now() * 0.001; // seconds
-
-        // 1. Check if we need to wake up or put to sleep performers
+        const time = performance.now() * 0.001;
         this._updateActivity(time);
-
-        // 2. For every active performer, calculate new smooth movement
-        this.indices.forEach(idx => {
-            const state = this.states.get(idx);
+        this.ids.forEach(id => {
+            const state = this.states.get(id);
             if (state.active) {
-                this._updateMovement(idx, time);
+                this._updateMovement(id, time);
             }
         });
-
         return this.data;
     }
 
-    /**
-     * Gets the current performance data for a specific performer.
-     * @param {number} idx - The index of the performer.
-     * @returns {object|null} The performance data object, or null if not found.
-     */
-    getData(idx) {
-        return this.data.get(idx) || null;
+    getData(id) {
+        return this.data.get(id) || null;
     }
 }
