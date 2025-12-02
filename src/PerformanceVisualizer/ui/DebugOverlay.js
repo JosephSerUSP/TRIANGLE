@@ -1,5 +1,5 @@
 // src/ui/DebugOverlay.js
-import { CONFIG } from '../core/Config.js';
+import { CONFIG } from '../../core/Config.js';
 
 /**
  * Manages the debug overlay canvas.

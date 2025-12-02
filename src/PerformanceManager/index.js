@@ -1,6 +1,6 @@
-import { VisionSystem } from '../systems/VisionSystem.js';
-import { AutopilotSystem } from '../systems/AutopilotSystem.js';
-import { Performer } from '../state/Performer.js';
+import { VisionSystem } from './systems/VisionSystem.js';
+import { AutopilotSystem } from './systems/AutopilotSystem.js';
+import { Performer } from './state/Performer.js';
 import { CONFIG } from '../core/Config.js';
 import { PERFORMER_COLORS } from '../core/Constants.js';
 

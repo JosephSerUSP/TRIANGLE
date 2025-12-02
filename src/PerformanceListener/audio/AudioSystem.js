@@ -1,8 +1,8 @@
 // src/systems/AudioSystem.js
 import * as THREE from 'three';
-import { CONFIG } from '../core/Config.js';
-import { CHORD_PROGRESSION, SCALES } from './audio/MusicTheory.js';
-import { PulseBass, StringPad, PluckSynth, ArpSynth, KickDrum } from './audio/Instruments.js';
+import { CONFIG } from '../../core/Config.js';
+import { CHORD_PROGRESSION, SCALES } from './MusicTheory.js';
+import { PulseBass, StringPad, PluckSynth, ArpSynth, KickDrum } from './Instruments.js';
 
 /**
  * Manages audio synthesis for the application.

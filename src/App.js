@@ -1,6 +1,6 @@
-import { PerformanceManager } from './modules/PerformanceManager.js';
-import { PerformanceVisualizer } from './modules/PerformanceVisualizer.js';
-import { PerformanceListener } from './modules/PerformanceListener.js';
+import { PerformanceManager } from './PerformanceManager/index.js';
+import { PerformanceVisualizer } from './PerformanceVisualizer/index.js';
+import { PerformanceListener } from './PerformanceListener/index.js';
 
 /**
  * Main application class.
