@@ -15,7 +15,8 @@ export class PerformanceListener {
 
     /**
      * Updates the audio output.
-     * @param {Object} performanceData - { performers }
+     * @param {object} performanceData - The performance data.
+     * @param {import('../PerformanceManager/state/Performer.js').Performer[]} performanceData.performers - An array of performer states.
      */
     update({ performers }) {
         if (this.audio.isReady) {

@@ -54,15 +54,15 @@ No complex installation is required as the project is self-contained in a single
 
 ## Architecture
 
-The application is structured into several modular classes:
+The application is structured into several modular classes. The source code is organized as follows:
 
--   `App`: The main controller that orchestrates the loop.
--   `VisionSystem`: Handles webcam input and MoveNet pose estimation.
--   `PerformerState`: Stores the physical and musical state of a performer.
--   `LatticeViewport`: Manages the Three.js scene, camera, and lattice rendering.
--   `AudioSystem`: A polyphonic synthesizer that reacts to performer state.
--   `Autopilot`: AI logic that controls virtual performers.
--   `DebugOverlay`: Canvas-based visualization of tracking data.
+-   `src/`: Contains the main application logic.
+    -   `main.js`: The main entry point for the application.
+    -   `App.js`: The main application class that orchestrates the different modules.
+    -   `core/`: Core configuration and constants.
+    -   `PerformanceManager/`: Manages the state of the performers.
+    -   `PerformanceVisualizer/`: Manages the visual output.
+    -   `PerformanceListener/`: Manages the audio output.
 
 ## Dependencies
 

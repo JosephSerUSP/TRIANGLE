@@ -13,7 +13,8 @@ import { CONFIG } from '../core/Config.js';
  */
 export class PerformanceVisualizer {
     /**
-     * @param {Performer[]} initialPerformers - Used to initialize viewports with correct colors.
+     * Creates an instance of PerformanceVisualizer.
+     * @param {import('../PerformanceManager/state/Performer.js').Performer[]} initialPerformers - An array of performers used to initialize the viewports.
      */
     constructor(initialPerformers) {
         this.renderer = new THREE.WebGLRenderer({ antialias: true, alpha: false });
