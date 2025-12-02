@@ -2,12 +2,14 @@
 import { CONFIG } from '../../core/Config.js';
 
 /**
- * Handles video input and pose detection using TensorFlow.js MoveNet model.
+ * @class VisionSystem
+ * @description Handles all video input and pose detection using the TensorFlow.js MoveNet model.
+ * It is responsible for acquiring the webcam stream and running the pose estimation model.
  */
 export class VisionSystem {
     /**
      * Creates a new VisionSystem instance.
-     * @param {HTMLVideoElement} videoElement - The HTML video element to use for input.
+     * @param {HTMLVideoElement} videoElement - The HTML video element that will be used for input and to display the camera feed.
      */
     constructor(videoElement) {
         this.video = videoElement;
@@ -16,11 +18,11 @@ export class VisionSystem {
     }
 
     /**
-     * Initializes the camera and loads the MoveNet model.
-     * Requests user media access.
+     * Initializes the camera and loads the MoveNet pose detection model.
+     * This method requests user media access for the webcam.
      * @async
-     * @returns {Promise<void>}
-     * @throws {Error} If getUserMedia is not available.
+     * @returns {Promise<void>} A promise that resolves when the camera is ready and the model is loaded.
+     * @throws {Error} Throws an error if `getUserMedia` is not supported by the browser.
      */
     async init() {
         let stream;
@@ -72,7 +74,7 @@ export class VisionSystem {
     /**
      * Estimates poses from the current video frame.
      * @async
-     * @returns {Promise<Array<Object>>} An array of detected poses.
+     * @returns {Promise<Array<object>>} An array of detected pose objects. Each pose object contains keypoints and a confidence score. Returns an empty array if the system is not ready or an error occurs.
      */
     async update() {
         if (!this.isReady) return [];

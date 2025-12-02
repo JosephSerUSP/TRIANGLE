@@ -1,6 +1,15 @@
 import { CONFIG } from '../../core/Config.js';
 
+/**
+ * Base class for all synthesizers.
+ * Provides common functionality like panning and an output gain node.
+ */
 export class Synthesizer {
+    /**
+     * Creates an instance of Synthesizer.
+     * @param {AudioContext} ctx - The Web Audio API AudioContext.
+     * @param {AudioNode} destination - The destination node to connect to.
+     */
     constructor(ctx, destination) {
         this.ctx = ctx;
         this.destination = destination;
@@ -16,6 +25,10 @@ export class Synthesizer {
         this.panner.connect(destination);
     }
 
+    /**
+     * Sets the stereo pan of the synthesizer.
+     * @param {number} value - The pan value, from -1 (left) to 1 (right).
+     */
     setPan(value) {
         // value from -1 (left) to 1 (right)
         if (this.panner) {
@@ -23,22 +36,49 @@ export class Synthesizer {
         }
     }
 
+    /**
+     * Modulates the synthesizer's parameters, such as filter cutoff.
+     * To be implemented by subclasses.
+     * @param {object} params - The modulation parameters.
+     */
     modulate(params) {
         // To be implemented by subclasses for timbre/filter modulation
     }
 
+    /**
+     * Plays a note on the synthesizer.
+     * To be implemented by subclasses.
+     * @param {number} freq - The frequency of the note to play.
+     * @param {number} time - The AudioContext time at which to play the note.
+     * @param {number} duration - The duration of the note in seconds.
+     * @param {number} [velocity=1.0] - The velocity of the note (0-1).
+     */
     playNote(freq, time, duration, velocity = 1.0) {
         // To be implemented by subclasses
     }
 }
 
+/**
+ * A simple kick drum synthesizer.
+ * @extends Synthesizer
+ */
 export class KickDrum extends Synthesizer {
+    /**
+     * Creates an instance of KickDrum.
+     * @param {AudioContext} ctx - The Web Audio API AudioContext.
+     * @param {AudioNode} destination - The destination node to connect to.
+     */
     constructor(ctx, destination) {
         super(ctx, destination);
         // Kick gain from config
         this.output.gain.value = CONFIG.audio.mix.kick;
     }
 
+    /**
+     * Plays a kick drum sound.
+     * @param {number} time - The AudioContext time at which to play the sound.
+     * @param {number} [velocity=1.0] - The velocity of the kick (0-1).
+     */
     playNote(time, velocity = 1.0) {
         const osc = this.ctx.createOscillator();
         osc.type = 'sine';
@@ -61,7 +101,16 @@ export class KickDrum extends Synthesizer {
     }
 }
 
+/**
+ * A bass synthesizer with a low-pass filter.
+ * @extends Synthesizer
+ */
 export class PulseBass extends Synthesizer {
+    /**
+     * Creates an instance of PulseBass.
+     * @param {AudioContext} ctx - The Web Audio API AudioContext.
+     * @param {AudioNode} destination - The destination node to connect to.
+     */
     constructor(ctx, destination) {
         super(ctx, destination);
         this.filter = ctx.createBiquadFilter();
@@ -116,7 +165,16 @@ export class PulseBass extends Synthesizer {
     }
 }
 
+/**
+ * A string pad synthesizer with a low-pass filter.
+ * @extends Synthesizer
+ */
 export class StringPad extends Synthesizer {
+    /**
+     * Creates an instance of StringPad.
+     * @param {AudioContext} ctx - The Web Audio API AudioContext.
+     * @param {AudioNode} destination - The destination node to connect to.
+     */
     constructor(ctx, destination) {
         super(ctx, destination);
         // Config volume
@@ -172,7 +230,16 @@ export class StringPad extends Synthesizer {
     }
 }
 
+/**
+ * A pluck synthesizer with a low-pass filter.
+ * @extends Synthesizer
+ */
 export class PluckSynth extends Synthesizer {
+    /**
+     * Creates an instance of PluckSynth.
+     * @param {AudioContext} ctx - The Web Audio API AudioContext.
+     * @param {AudioNode} destination - The destination node to connect to.
+     */
     constructor(ctx, destination) {
         super(ctx, destination);
 
@@ -216,7 +283,16 @@ export class PluckSynth extends Synthesizer {
     }
 }
 
+/**
+ * An arpeggio synthesizer.
+ * @extends Synthesizer
+ */
 export class ArpSynth extends Synthesizer {
+    /**
+     * Creates an instance of ArpSynth.
+     * @param {AudioContext} ctx - The Web Audio API AudioContext.
+     * @param {AudioNode} destination - The destination node to connect to.
+     */
     constructor(ctx, destination) {
         super(ctx, destination);
         // Config volume

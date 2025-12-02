@@ -2,13 +2,14 @@
 import { CONFIG } from '../../core/Config.js';
 
 /**
- * Manages the debug overlay canvas.
- * Displays performance metrics and internal state when enabled.
+ * @class DebugOverlay
+ * @description Manages the 2D debug overlay canvas.
+ * It displays performance metrics, internal state, and pose skeletons when enabled.
  */
 export class DebugOverlay {
     /**
      * Creates a new DebugOverlay instance.
-     * @param {string} canvasId - The ID of the canvas element.
+     * @param {string} canvasId - The ID of the HTML canvas element to be used for the overlay.
      */
     constructor(canvasId) {
         this.canvas = document.getElementById(canvasId);
@@ -29,7 +30,7 @@ export class DebugOverlay {
     }
 
     /**
-     * Resizes the canvas to match the window dimensions.
+     * Resizes the canvas to match the current window dimensions.
      */
     resize() {
         if (!this.canvas) return;
@@ -39,8 +40,9 @@ export class DebugOverlay {
 
     /**
      * Draws debug information to the canvas.
-     * @param {Array<Object>} poses - The detected poses.
-     * @param {Performer[]} performers - Array of performer states.
+     * This method is called on every frame by the `PerformanceVisualizer`.
+     * @param {Array<object>} poses - The array of detected poses from the `VisionSystem`.
+     * @param {import('../../PerformanceManager/state/Performer.js').Performer[]} performers - The array of performer state objects.
      */
     draw(poses, performers) {
         if (!this.ctx) return;

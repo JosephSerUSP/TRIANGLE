@@ -12,6 +12,9 @@ import { PERFORMER_COLORS } from '../core/Constants.js';
  * 3. Providing the current state to the Output systems.
  */
 export class PerformanceManager {
+    /**
+     * Creates an instance of PerformanceManager.
+     */
     constructor() {
         // --- 1. Initialize Inputs ---
         // Note: VisionSystem depends on the DOM element 'video'

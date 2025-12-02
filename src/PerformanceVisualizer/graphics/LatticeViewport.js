@@ -280,9 +280,9 @@ export class LatticeViewport {
      * Renders the scene for this viewport.
      * Uses stencil buffer to mask the viewport area based on the corners.
      * @param {THREE.WebGLRenderer} renderer - The Three.js renderer.
-     * @param {Object} rect - The viewport bounding box {x, y, width, height}.
-     * @param {Performer} performer - The state of the performer to render.
-     * @param {Object} [corners] - The 4 corners of the mask {tl, tr, bl, br} in pixels.
+     * @param {object} rect - The viewport bounding box {x, y, width, height}.
+     * @param {import('../../PerformanceManager/state/Performer.js').Performer} performer - The state of the performer to render.
+     * @param {object} [corners] - The 4 corners of the mask {tl, tr, bl, br} in pixels.
      */
     render(renderer, rect, performer, corners) {
         const { x, y, width, height } = rect;

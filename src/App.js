@@ -3,15 +3,16 @@ import { PerformanceVisualizer } from './PerformanceVisualizer/index.js';
 import { PerformanceListener } from './PerformanceListener/index.js';
 
 /**
- * Main application class.
- * Orchestrates the modular systems:
- * 1. Performance Manager (Input/State)
- * 2. Performance Visualizer (Graphics Output)
- * 3. Performance Listener (Audio Output)
+ * @class App
+ * @description The main application class. It orchestrates the three core modules:
+ * 1.  `PerformanceManager`: Handles input and state.
+ * 2.  `PerformanceVisualizer`: Handles graphics output.
+ * 3.  `PerformanceListener`: Handles audio output.
  */
 export class App {
     /**
-     * Creates a new App instance and wires up the modules.
+     * Creates a new App instance.
+     * This constructor initializes and wires up all the core modules of the application.
      */
     constructor() {
         // --- 1. Initialize Modules ---
@@ -24,7 +25,7 @@ export class App {
     }
 
     /**
-     * Initializes the manager and starts the main loop.
+     * Initializes the PerformanceManager and starts the main application loop.
      * @private
      * @async
      */
@@ -34,8 +35,9 @@ export class App {
     }
 
     /**
-     * The main game loop.
-     * Fetches data from the Manager and passes it to Visualizer and Listener.
+     * The main application loop.
+     * This method is called recursively via `requestAnimationFrame` to create a continuous update cycle.
+     * It fetches the latest performance data from the Manager and passes it to the Visualizer and Listener.
      * @async
      */
     async loop() {
