@@ -76,7 +76,7 @@ export class Performer {
         this.hasPerformer = data.hasPerformer;
 
         if (!data.hasPerformer) {
-             this._resetTarget();
+             // Do NOT reset target here. Wait until presence is near zero.
              return;
         }
 
@@ -93,9 +93,6 @@ export class Performer {
         this.triangle.area = data.triangle.area;
 
         // Reconstruct vertices for visualization if needed (simplified)
-        // Note: The original code calculated vertices in Autopilot.
-        // We can reconstruct them here or pass them.
-        // For simplicity, we'll reconstruct based on width/height since Autopilot passed those.
         if (this.triangle.visible) {
              const scale = 0.9;
              // We can just use the generic shape derived from width/height
@@ -112,23 +109,13 @@ export class Performer {
      */
     updateFromPose(poses) {
         // If we are virtual but acting as physical (e.g. Autopilot disabled), we allow this.
-        // Ideally we should update isVirtual flag or ignore it.
-        // For now, let's respect isVirtual strictly, but the App might call this on virtual performers if we change App logic.
-        // Actually, App logic changes performers[1] to be "physical-capable" if autopilot is off?
-        // Or we just allow updateFromPose to run regardless, but usually it wasn't called.
-        // The original code had: if (this.isVirtual) return;
-        // If we want P1/P2 to be physical when autopilot is off, we must allow this method to run.
-
-        // But wait, the Performer constructor sets isVirtual.
-        // If we want dynamic behavior, we should check a passed flag or rely on App to call the right method.
-        // I will remove the strict isVirtual check here and rely on the caller.
 
         const vW = CONFIG.camera.width;
         const vH = CONFIG.camera.height;
 
         if (!poses || poses.length === 0) {
             this.hasPerformer = false;
-            this._resetTarget();
+            // Do NOT reset target here. Wait until presence is near zero.
             return;
         }
 
@@ -149,7 +136,7 @@ export class Performer {
 
         if (!dominant) {
             this.hasPerformer = false;
-            this._resetTarget();
+            // Do NOT reset target here. Wait until presence is near zero.
             return;
         }
 
@@ -167,7 +154,7 @@ export class Performer {
 
         if (!pose) {
             this.hasPerformer = false;
-            this._resetTarget();
+            // Do NOT reset target here. Wait until presence is near zero.
             return;
         }
 
@@ -177,7 +164,7 @@ export class Performer {
         // Basic validation again just in case, though usually pre-filtered
         if (!ls || !rs || ls.score <= 0.3 || rs.score <= 0.3) {
              this.hasPerformer = false;
-             this._resetTarget();
+             // Do NOT reset target here.
              return;
         }
 
@@ -288,6 +275,21 @@ export class Performer {
      * Applies smoothing to roll, pitch, yaw, depth, and BPM.
      */
     updatePhysics() {
+        // Presence logic for smooth transitions
+        const targetPresence = this.hasPerformer ? 1.0 : 0.0;
+        const transitionSmoothing = CONFIG.layout ? CONFIG.layout.transitionSmoothing : 0.05;
+        this.presence = THREE.MathUtils.lerp(this.presence, targetPresence, transitionSmoothing);
+
+        if (Math.abs(this.presence - targetPresence) < 0.001) {
+            this.presence = targetPresence;
+        }
+
+        // If no performer and fully faded out, reset the targets to default.
+        // This prevents the "visual disconnect" where the grid resets while fading out.
+        if (!this.hasPerformer && this.presence <= 0.001) {
+            this._resetTarget();
+        }
+
         const a = CONFIG.smoothing;
         this.current.roll = THREE.MathUtils.lerp(this.current.roll, this.target.roll, a);
         this.current.pitch = THREE.MathUtils.lerp(this.current.pitch, this.target.pitch, a);
@@ -295,13 +297,5 @@ export class Performer {
         this.current.depth = THREE.MathUtils.lerp(this.current.depth, this.target.depth, CONFIG.depthSmoothing);
         this.current.phaseZ = this.current.depth * CONFIG.grid.phaseScale;
         this.current.bpmPref = THREE.MathUtils.lerp(this.current.bpmPref, this.target.bpmPref, 0.05);
-
-        // Presence logic for smooth transitions
-        const targetPresence = this.hasPerformer ? 1.0 : 0.0;
-        const transitionSmoothing = CONFIG.layout ? CONFIG.layout.transitionSmoothing : 0.05;
-        this.presence = THREE.MathUtils.lerp(this.presence, targetPresence, transitionSmoothing);
-        if (Math.abs(this.presence - targetPresence) < 0.001) {
-            this.presence = targetPresence;
-        }
     }
 }
