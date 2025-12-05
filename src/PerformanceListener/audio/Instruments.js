@@ -132,35 +132,57 @@ export class PulseBass extends Synthesizer {
     }
 
     playNote(freq, time, duration, velocity) {
+        // Main Oscillator
         const osc = this.ctx.createOscillator();
         osc.type = 'sawtooth';
         osc.frequency.value = freq;
 
+        // Sub Oscillator for richness/weight
+        const subOsc = this.ctx.createOscillator();
+        subOsc.type = 'triangle';
+        subOsc.frequency.value = freq / 2; // Octave down
+
         const gain = this.ctx.createGain();
+        const subGain = this.ctx.createGain();
 
         // Envelope
         const attack = 0.01;
-        const decay = 0.1;
-        const sustain = 0.5;
+        const decay = 0.2; // Slightly longer decay for fullness
+        const sustain = 0.6; // Higher sustain
         const release = 0.1;
 
         osc.connect(gain);
+        subOsc.connect(subGain);
+
         gain.connect(this.filter);
+        subGain.connect(this.filter);
 
         osc.start(time);
+        subOsc.start(time);
 
+        // Main Env
         gain.gain.setValueAtTime(0, time);
         gain.gain.linearRampToValueAtTime(velocity, time + attack);
         gain.gain.exponentialRampToValueAtTime(velocity * sustain, time + attack + decay);
         gain.gain.setValueAtTime(velocity * sustain, time + duration);
         gain.gain.exponentialRampToValueAtTime(0.001, time + duration + release);
 
+        // Sub Env (slightly louder/constant to provide foundation)
+        subGain.gain.setValueAtTime(0, time);
+        subGain.gain.linearRampToValueAtTime(velocity * 0.8, time + attack);
+        subGain.gain.exponentialRampToValueAtTime(velocity * 0.5, time + attack + decay); // Less sustain on sub to keep it tight
+        subGain.gain.setValueAtTime(velocity * 0.5, time + duration);
+        subGain.gain.exponentialRampToValueAtTime(0.001, time + duration + release);
+
         osc.stop(time + duration + release + 0.1);
+        subOsc.stop(time + duration + release + 0.1);
 
         // Filter envelope for "wow" effect - added to base cutoff
         // We use setTargetAtTime in modulate, so here we might want to punch it
+        // Made this slightly smoother to reduce "zap" sound
+        this.filter.frequency.cancelScheduledValues(time);
         this.filter.frequency.setValueAtTime(200, time);
-        this.filter.frequency.exponentialRampToValueAtTime(2000, time + attack);
+        this.filter.frequency.exponentialRampToValueAtTime(1500, time + attack);
         this.filter.frequency.exponentialRampToValueAtTime(400, time + attack + decay);
     }
 }
@@ -201,16 +223,21 @@ export class StringPad extends Synthesizer {
     playNote(freq, time, duration, velocity) {
         const osc1 = this.ctx.createOscillator();
         const osc2 = this.ctx.createOscillator();
+        const osc3 = this.ctx.createOscillator(); // Third osc for richness
+
         osc1.type = 'sawtooth';
         osc2.type = 'sawtooth';
+        osc3.type = 'triangle'; // Smoother layer
 
         osc1.frequency.value = freq;
-        osc2.frequency.value = freq * 1.002; // Detune
+        osc2.frequency.value = freq * 1.004; // Detune +
+        osc3.frequency.value = freq * 0.996; // Detune -
 
         const gain = this.ctx.createGain();
 
         osc1.connect(gain);
         osc2.connect(gain);
+        osc3.connect(gain);
         gain.connect(this.filter); // Connect to the class-wide filter
 
         const attack = 0.5;
@@ -218,15 +245,18 @@ export class StringPad extends Synthesizer {
 
         osc1.start(time);
         osc2.start(time);
+        osc3.start(time);
 
         gain.gain.setValueAtTime(0, time);
-        // Increased velocity scalar from 0.3 to 0.6
-        gain.gain.linearRampToValueAtTime(velocity * 0.6, time + attack);
-        gain.gain.setValueAtTime(velocity * 0.6, time + duration);
+        // Normalize gain since we added an oscillator (0.6 -> 0.4 approx per osc)
+        const v = velocity * 0.5;
+        gain.gain.linearRampToValueAtTime(v, time + attack);
+        gain.gain.setValueAtTime(v, time + duration);
         gain.gain.linearRampToValueAtTime(0, time + duration + release);
 
         osc1.stop(time + duration + release);
         osc2.stop(time + duration + release);
+        osc3.stop(time + duration + release);
     }
 }
 
@@ -263,7 +293,11 @@ export class PluckSynth extends Synthesizer {
 
     playNote(freq, time, duration, velocity) {
         const osc = this.ctx.createOscillator();
-        osc.type = 'square';
+        // Square is very tinny/hollow. Mix of Saw/Square or just Pulse width is better.
+        // WebAudio square is 50% duty cycle.
+        // Let's use Triangle for a rounder pluck or Saw with filter.
+        // Going with Sawtooth but heavier filter envelope.
+        osc.type = 'sawtooth';
         osc.frequency.value = freq;
 
         const gain = this.ctx.createGain();
@@ -271,15 +305,17 @@ export class PluckSynth extends Synthesizer {
         osc.connect(gain);
         gain.connect(this.filter); // Use class filter
 
-        const attack = 0.01;
+        const attack = 0.005;
+        const decay = 0.3;
         const release = 0.2;
 
         osc.start(time);
         gain.gain.setValueAtTime(0, time);
-        gain.gain.linearRampToValueAtTime(velocity * 0.5, time + attack);
-        gain.gain.exponentialRampToValueAtTime(0.001, time + attack + release);
+        gain.gain.linearRampToValueAtTime(velocity * 0.6, time + attack);
+        gain.gain.exponentialRampToValueAtTime(velocity * 0.2, time + attack + decay); // Sustain level
+        gain.gain.exponentialRampToValueAtTime(0.001, time + attack + decay + release);
 
-        osc.stop(time + attack + release + 0.1);
+        osc.stop(time + attack + decay + release + 0.1);
     }
 }
 
@@ -304,22 +340,34 @@ export class ArpSynth extends Synthesizer {
 
     playNote(freq, time, duration, velocity) {
         const osc = this.ctx.createOscillator();
+        // Triangle is soft. Arps should cut a bit more but not be tinny.
+        // Sine + heavy FM or just a filtered square?
+        // Let's stick to Triangle but maybe add a secondary sine for body.
         osc.type = 'triangle';
         osc.frequency.value = freq;
+
+        // Sub/Harmonic
+        const osc2 = this.ctx.createOscillator();
+        osc2.type = 'sine';
+        osc2.frequency.value = freq * 2; // Octave up for 'bell' tone
 
         const gain = this.ctx.createGain();
 
         osc.connect(gain);
+        osc2.connect(gain);
         gain.connect(this.output);
 
         const attack = 0.005;
-        const decay = 0.1;
+        const decay = 0.15; // Slightly longer
 
         osc.start(time);
+        osc2.start(time);
+
         gain.gain.setValueAtTime(0, time);
         gain.gain.linearRampToValueAtTime(velocity * 0.4, time + attack);
         gain.gain.exponentialRampToValueAtTime(0.001, time + attack + decay);
 
         osc.stop(time + attack + decay + 0.1);
+        osc2.stop(time + attack + decay + 0.1);
     }
 }
