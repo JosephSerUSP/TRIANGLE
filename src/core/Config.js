@@ -18,7 +18,7 @@ export const CONFIG = {
     /** Enable or disable debug mode */
     debug: false,
     /** Enable or disable Autopilot system */
-    enableAutopilot: false,
+    enableAutopilot: true,
     /**
      * View mode:
      * 0: Lattice Only
