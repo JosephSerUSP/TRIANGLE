@@ -25,7 +25,7 @@ export class AudioSystem {
         this.currentSixteenthNote = 0;
         this.barCounter = 0; // Count bars to handle longer loops
         this.nextNoteTime = 0.0;
-        this.tempo = 120.0;
+        this.tempo = 110.0; // Slightly slower for deeper feel
         this.lookahead = 25.0; // ms
         this.scheduleAheadTime = 0.1; // s
 
@@ -37,23 +37,29 @@ export class AudioSystem {
         this.clavePattern = [1, 0, 0, 1, 0, 0, 1, 0, 0, 0, 1, 0, 1, 0, 0, 0];
 
         // Bass pattern (dotted quarter + eighth feel / driving)
-        // 1 = root, 2 = fifth
-        this.bassPattern = [1, 0, 0, 1, 0, 0, 2, 0, 1, 0, 0, 1, 0, 0, 2, 0];
+        // 1 = root, 2 = fifth, 3 = octave
+        this.bassPattern = [1, 0, 0, 1, 0, 0, 2, 0, 1, 0, 0, 1, 0, 0, 3, 0];
 
         // Kick Pattern (4-on-the-floor)
         this.kickPattern = [1, 0, 0, 0, 1, 0, 0, 0, 1, 0, 0, 0, 1, 0, 0, 0];
 
         this.kickIntensity = 0.0;
 
-        // Ostinato Pattern (Performer B)
-        this.ostinatoPattern = [0, 2, 4, 7, 4, 2, 0, 2, 0, 2, 4, 7, 4, 2, 0, 2]; // Scale degrees
+        // Ostinato Patterns (Deterministic)
+        this.ostinatoPatterns = [
+            [0, 2, 4, 7, 4, 2, 0, 2, 0, 2, 4, 7, 4, 2, 0, 2], // 16th flow
+            [0, 4, 7, 9, 7, 4, 0, 4, 0, 4, 7, 9, 7, 4, 0, 4], // Wider
+            [0, 2, 0, 2, 4, 2, 4, 7, 4, 7, 9, 7, 9, 11, 9, 7]  // Climbing
+        ];
 
-        // Channel state tracking for Intro/Outro logic
-        // Status: 'SILENT', 'INTRO', 'MAIN', 'OUTRO'
+        // Channel state tracking
+        // Instead of discrete states, we use 'energy' (0.0 - 1.0)
+        // This ensures persistence and smooth transitions.
+        this.channelEnergies = [0, 0, 0];
         this.channelStates = [
-            { status: 'SILENT', startTime: 0, leaveTime: 0 },
-            { status: 'SILENT', startTime: 0, leaveTime: 0 },
-            { status: 'SILENT', startTime: 0, leaveTime: 0 }
+            { status: 'SILENT' },
+            { status: 'SILENT' },
+            { status: 'SILENT' }
         ];
     }
 
@@ -73,9 +79,9 @@ export class AudioSystem {
         this.compressor.ratio.value = 12;
 
         this.masterGain = this.ctx.createGain();
-        this.masterGain.gain.value = 0.8;
+        this.masterGain.gain.value = CONFIG.audio.mix.master;
 
-        // Simple convolution reverb
+        // Convolution Reverb
         this.reverb = this.ctx.createConvolver();
         this._createReverbImpulse();
 
@@ -86,12 +92,12 @@ export class AudioSystem {
 
         // Reverb Send
         this.reverbGain = this.ctx.createGain();
-        this.reverbGain.gain.value = 0.3;
+        this.reverbGain.gain.value = CONFIG.audio.mix.reverb;
         this.reverb.connect(this.reverbGain);
         this.reverbGain.connect(this.masterGain);
 
         // Performer Setup
-        // A (0): Bass + String
+        // A (0): Bass (Logic) + String
         // B (1): Ostinato + String
         // C (2): Arp + String
 
@@ -128,16 +134,20 @@ export class AudioSystem {
 
     _createReverbImpulse() {
         const rate = this.ctx.sampleRate;
-        const length = rate * 2.0; // 2 seconds
-        const decay = 2.0;
+        const length = rate * 3.0; // 3 seconds - longer tail
+        const decay = 3.0;
         const impulse = this.ctx.createBuffer(2, length, rate);
         const left = impulse.getChannelData(0);
         const right = impulse.getChannelData(1);
 
         for (let i = 0; i < length; i++) {
             const n = length - i;
-            left[i] = (Math.random() * 2 - 1) * Math.pow(n / length, decay);
-            right[i] = (Math.random() * 2 - 1) * Math.pow(n / length, decay);
+            // Pink noise approximation for smoother reverb
+            // Use distinct noise for Left/Right to ensure stereo width
+            let whiteL = Math.random() * 2 - 1;
+            let whiteR = Math.random() * 2 - 1;
+            left[i] = whiteL * Math.pow(n / length, decay);
+            right[i] = whiteR * Math.pow(n / length, decay);
         }
         this.reverb.buffer = impulse;
     }
@@ -190,7 +200,10 @@ export class AudioSystem {
 
         const currentChord = this.progression[this.chordIndex];
         const baseFreq = CONFIG.audio.rootFreq;
-        const cycleIndex = Math.floor(this.barCounter / 4);
+
+        // --- Aggregate Energy Logic ---
+        // Calculate total energy to drive global instruments (Kick, Bass)
+        const totalEnergy = this.channelEnergies.reduce((a, b) => a + b, 0);
 
         // --- Kick Drum ---
         if (this.kickIntensity > 0.001) {
@@ -199,139 +212,144 @@ export class AudioSystem {
             }
         }
 
-        // --- Performer State Loop ---
+        // --- Bass (Global Instrument) ---
+        // Plays if ANY energy is present (> 0.1)
+        if (totalEnergy > 0.1) {
+             const inst = this.instruments[0].primary; // Reuse P0's bass synth
+
+             // Determine Pattern Complexity based on Total Energy
+             // Low Energy: Root on 1
+             // Med Energy: Root-5 Pattern
+             // High Energy: Driving Pattern
+
+             let noteToPlay = null;
+
+             if (totalEnergy < 1.0) {
+                 // Simple
+                 if (beatNumber === 0) noteToPlay = 1;
+                 if (beatNumber === 8 && totalEnergy > 0.5) noteToPlay = 1;
+             } else {
+                 // Full Pattern
+                 const step = this.bassPattern[beatNumber];
+                 if (step > 0) noteToPlay = step;
+
+                 // Variation every 4th bar
+                 if (this.barCounter % 4 === 3 && beatNumber > 8) {
+                     if (beatNumber % 2 === 0) noteToPlay = 1; // Fill
+                 }
+             }
+
+             if (noteToPlay) {
+                 let interval = (noteToPlay === 1 ? currentChord.bass : currentChord.bass + 7);
+                 if (noteToPlay === 3) interval = currentChord.bass + 12;
+
+                 // Pedal Point logic
+                 if (this.barCounter % 8 === 7) interval = currentChord.bass; // Stay on root for resolution
+
+                 const freq = baseFreq * Math.pow(2, interval / 12);
+                 const vel = 0.4 + (Math.min(totalEnergy, 2.0) * 0.3); // Velocity scales with energy
+                 inst.playNote(freq, time, 0.25, vel);
+
+                 // Filter modulation based on energy
+                 inst.modulate({ timbre: Math.min(totalEnergy / 2, 1.0) });
+             }
+        }
+
+        // --- Performer Layers ---
         for (let i = 0; i < 3; i++) {
-            if (!this._performerStates || !this._performerStates[i]) continue;
+            const energy = this.channelEnergies[i];
+            if (energy < 0.01) continue;
 
-            const pState = this._performerStates[i];
-            const channel = this.channelStates[i];
             const inst = this.instruments[i];
+            const pState = this._performerStates && this._performerStates[i] ? this._performerStates[i] : { expression: 0.5, pan: 0 };
 
-            // Modulation (Timbre/Pan)
-            // If OUTRO, lower timbre/cutoff
-            let timbre = pState.expression;
-            if (channel.status === 'OUTRO') {
-                timbre *= 0.5; // Darker
-            }
+            // Map energy to timbre
+            const timbre = pState.expression * energy;
 
             inst.primary.setPan(pState.pan);
             inst.primary.modulate({ timbre: timbre });
             inst.secondary.setPan(pState.pan * 0.5);
             inst.secondary.modulate({ timbre: timbre });
 
-            // If SILENT, skip note generation
-            if (channel.status === 'SILENT') continue;
+            // --- String Pad (Everyone contributes) ---
+            // Trigger on downbeat, hold for 2 or 4 bars
+            if (beatNumber === 0 && this.barCounter % 2 === 0) {
+                // Spread notes based on ID
+                // 0: Root
+                // 1: 3rd
+                // 2: 7th
+                const chordNotes = currentChord.notes;
+                let noteIdx = 0;
+                if (i === 1) noteIdx = 2; // 3rd/5th depending on voicing
+                if (i === 2) noteIdx = Math.min(3, chordNotes.length - 1);
 
-            // --- Pattern Logic ---
+                const note = chordNotes[noteIdx];
+                // Octave adjustment
+                const octave = (i === 0) ? 1 : 2;
 
-            // Performer A: Bass + String
-            if (i === 0) {
-                // Bass Variation Logic
-                let bassNoteToPlay = null;
-
-                // INTRO: Only downbeat (Beat 0)
-                if (channel.status === 'INTRO') {
-                    if (beatNumber === 0) bassNoteToPlay = 1; // Root
-                }
-                // OUTRO: Sparse, maybe just root on downbeat or every 2 beats
-                else if (channel.status === 'OUTRO') {
-                    if (beatNumber === 0 || beatNumber === 8) bassNoteToPlay = 1;
-                }
-                // MAIN: Full pattern + Variations
-                else {
-                    // Check for forced driving expression
-                    if (pState.expression > 0.8) {
-                        // Driving 8th notes
-                         if (beatNumber % 2 === 0) bassNoteToPlay = 1;
-                    } else {
-                        // Standard Pattern
-                        const step = this.bassPattern[beatNumber];
-                        if (step > 0) bassNoteToPlay = step;
-                    }
-                }
-
-                if (bassNoteToPlay) {
-                    // Harmonic Variation (Recontextualization)
-                    // Cycle % 4 == 1 -> Inversion (3rd)
-                    // Cycle % 4 == 3 -> Pedal Point (Key Root)
-                    let interval = (bassNoteToPlay === 1 ? currentChord.bass : currentChord.bass + 7);
-
-                    if (channel.status === 'MAIN') {
-                        if (cycleIndex % 4 === 1 && bassNoteToPlay === 1) {
-                            // Inversion: Play the 3rd of the chord (index 2 in notes)
-                            // But currentChord.bass is offset.
-                            // currentChord.notes[2] is the interval for the 3rd relative to key.
-                            interval = currentChord.notes[2] - 12; // octave down
-                        } else if (cycleIndex % 4 === 3) {
-                            // Pedal Point on D (0)
-                            interval = 0; // D1
-                        }
-                    }
-
-                    const freq = baseFreq * Math.pow(2, interval / 12);
-                    const vel = 0.5 + (timbre * 0.5);
-                    inst.primary.playNote(freq, time, 0.2, vel);
-                }
-
-                // String Pad
-                // Retrigger occasionally
-                const padTriggerBeat = 0;
-                // Intro/Outro: longer pads
-                const padIntervalBars = (channel.status === 'MAIN') ? 2 : 4;
-
-                if (beatNumber === padTriggerBeat && this.barCounter % padIntervalBars === 0) {
-                     // Play single note (Root) instead of full chord
-                     const n = currentChord.notes[0];
-                     const f = baseFreq * 2 * Math.pow(2, n/12);
-                     inst.secondary.playNote(f, time, 4.0, 0.4 * timbre);
-                }
+                const f = baseFreq * octave * Math.pow(2, note/12);
+                const vel = 0.3 * energy;
+                inst.secondary.playNote(f, time, 4.0, vel);
             }
 
-            // Performer B: Ostinato + String
-            else if (i === 1) {
-                const scaleIndex = this.ostinatoPattern[beatNumber];
-                // Density based on state
-                let density = 0.5;
-                if (channel.status === 'INTRO') density = 0.2;
-                if (channel.status === 'OUTRO') density = 0.1;
-                if (channel.status === 'MAIN') density = 0.2 + pState.expression * 0.8;
+            // --- Melodic Layers ---
 
-                if (scaleIndex !== undefined && Math.random() < density) {
+            // P1: Ostinato (Deterministic)
+            if (i === 1) {
+                // Select pattern based on bar
+                const patIdx = this.barCounter % this.ostinatoPatterns.length;
+                const pattern = this.ostinatoPatterns[patIdx];
+
+                const scaleIndex = pattern[beatNumber];
+
+                // Deterministic trigger: always play if energy high enough,
+                // or mask with a rhythmic grid
+                // Simple mask: play every note in pattern if energy > 0.5
+                // If energy < 0.5, play only on strong beats (0, 4, 8, 12)
+
+                let shouldPlay = true;
+                if (energy < 0.5 && beatNumber % 4 !== 0) shouldPlay = false;
+
+                if (shouldPlay) {
                     const noteIndex = scaleIndex % currentChord.notes.length;
                     const interval = currentChord.notes[noteIndex];
                     const f = baseFreq * 4 * Math.pow(2, interval/12);
-                    const vel = 0.3 + (timbre * 0.6);
-                    inst.primary.playNote(f, time, 0.1, vel);
-                }
-
-                // Pad
-                if (beatNumber === 0 && this.barCounter % 2 === 0) {
-                     const n = currentChord.notes[2];
-                     const f = baseFreq * 4 * Math.pow(2, n/12);
-                     inst.secondary.playNote(f, time, 4.0, 0.3 * timbre);
+                    const vel = 0.2 + (timbre * 0.4);
+                    inst.primary.playNote(f, time, 0.15, vel);
                 }
             }
 
-            // Performer C: Arpeggio + String
-            else if (i === 2) {
-                 let density = 0.5;
-                if (channel.status === 'INTRO') density = 0.1;
-                if (channel.status === 'OUTRO') density = 0.05;
-                if (channel.status === 'MAIN') density = 0.1 + pState.expression * 0.9;
+            // P2: Arpeggio (Deterministic)
+            if (i === 2) {
+                // Arp pattern: Up, Down, or Random-seeded
+                // Let's use a mathematical arp based on beat
+                // Beat 0: Note 0
+                // Beat 1: Note 1
+                // ...
 
-                if (Math.random() < density) {
-                    const arpIndex = beatNumber % currentChord.notes.length;
-                    const interval = currentChord.notes[arpIndex];
+                // Density control
+                // Energy 0.0-0.3: Quarter notes
+                // Energy 0.3-0.7: Eighth notes
+                // Energy 0.7-1.0: Sixteenths
+
+                let subdiv = 4; // Quarters (0, 4, 8, 12)
+                if (energy > 0.3) subdiv = 2; // Eighths
+                if (energy > 0.7) subdiv = 1; // 16ths
+
+                if (beatNumber % subdiv === 0) {
+                    const numNotes = currentChord.notes.length;
+                    // Pattern: Up/Down based on bar parity
+                    let noteIdx;
+                    if (this.barCounter % 2 === 0) {
+                        noteIdx = (beatNumber / subdiv) % numNotes;
+                    } else {
+                        noteIdx = (numNotes - 1) - ((beatNumber / subdiv) % numNotes);
+                    }
+
+                    const interval = currentChord.notes[noteIdx];
                     const f = baseFreq * 4 * Math.pow(2, interval/12);
-                    const vel = (0.3 + (timbre * 0.5)) * (0.8 + Math.random() * 0.4);
+                    const vel = 0.2 + (timbre * 0.5);
                     inst.primary.playNote(f, time, 0.1, vel);
-                }
-
-                // String
-                 if (beatNumber === 8 && this.barCounter % 2 === 0) {
-                     const n = currentChord.notes[1];
-                     const f = baseFreq * 2 * Math.pow(2, n/12);
-                     inst.secondary.playNote(f, time, 4.0, 0.3 * timbre);
                 }
             }
         }
@@ -344,61 +362,35 @@ export class AudioSystem {
     update(performers) {
         if (!this.isReady) return;
 
-        // Cache simplified state for the scheduler
+        // Cache state
         this._performerStates = performers.map(p => ({
             active: p.hasPerformer,
             expression: THREE.MathUtils.clamp(p.triangle.height || 0.5, 0.0, 1.0),
             pan: THREE.MathUtils.clamp((p.current.yaw || 0) / (Math.PI / 2), -1, 1)
         }));
 
-        const now = this.ctx.currentTime;
-        const INTRO_DURATION = 8.0; // 8 seconds (approx 4 bars at 120bpm)
-        const OUTRO_DURATION = 4.0; // 4 seconds linger
+        // Update Channel Energies (Smooth Persistence)
+        const attack = 0.05; // Fast rise
+        const decay = 0.005; // Very slow decay (prevents flicker dropout)
 
-        // Calculate Kick Intensity
-        // Silent < 2
-        // Timid = 2 (0.4)
-        // Pounding = 3 (1.0)
-        const activeCount = this._performerStates.filter(p => p.active).length;
-        let targetKick = 0.0;
-        if (activeCount === 2) targetKick = 0.4;
-        if (activeCount >= 3) targetKick = 1.0;
-
-        // Smooth transition
-        this.kickIntensity += (targetKick - this.kickIntensity) * 0.05;
-
-        // State Machine Update
         for (let i = 0; i < 3; i++) {
             const p = this._performerStates[i];
-            const channel = this.channelStates[i];
-
             if (p.active) {
-                // If previously silent or outro, start Intro
-                if (channel.status === 'SILENT' || channel.status === 'OUTRO') {
-                    channel.status = 'INTRO';
-                    channel.startTime = now;
-                }
-
-                // Check Intro -> Main transition
-                if (channel.status === 'INTRO') {
-                    if (now - channel.startTime > INTRO_DURATION) {
-                        channel.status = 'MAIN';
-                    }
-                }
+                this.channelEnergies[i] += attack;
             } else {
-                // Performer gone
-                if (channel.status === 'MAIN' || channel.status === 'INTRO') {
-                    channel.status = 'OUTRO';
-                    channel.leaveTime = now;
-                }
-
-                // Check Outro -> Silent
-                if (channel.status === 'OUTRO') {
-                    if (now - channel.leaveTime > OUTRO_DURATION) {
-                        channel.status = 'SILENT';
-                    }
-                }
+                this.channelEnergies[i] -= decay;
             }
+            this.channelEnergies[i] = THREE.MathUtils.clamp(this.channelEnergies[i], 0.0, 1.0);
         }
+
+        // Calculate Kick Intensity based on Aggregate Energy
+        const totalEnergy = this.channelEnergies.reduce((a, b) => a + b, 0);
+        let targetKick = 0.0;
+
+        if (totalEnergy > 1.5) targetKick = 1.0;      // 3 people or 2 very active
+        else if (totalEnergy > 0.8) targetKick = 0.6; // 1-2 people
+        else if (totalEnergy > 0.2) targetKick = 0.3; // Just starting
+
+        this.kickIntensity += (targetKick - this.kickIntensity) * 0.05;
     }
 }
