@@ -48,12 +48,27 @@ export class AudioSystem {
         // Ostinato Pattern (Performer B)
         this.ostinatoPattern = [0, 2, 4, 7, 4, 2, 0, 2, 0, 2, 4, 7, 4, 2, 0, 2]; // Scale degrees
 
+        // Deterministic Rhythmic Thresholds (0.0 = Always play, 1.0 = High intensity only)
+        this.ostinatoThresholds = [
+            0.0, 0.8, 0.3, 0.7, // 1 e & a
+            0.1, 0.8, 0.4, 0.7, // 2 e & a
+            0.0, 0.8, 0.2, 0.7, // 3 e & a
+            0.1, 0.8, 0.5, 0.7  // 4 e & a
+        ];
+
+        this.arpThresholds = [
+            0.0, 0.5, 0.2, 0.7,
+            0.1, 0.6, 0.3, 0.8,
+            0.0, 0.5, 0.2, 0.7,
+            0.1, 0.6, 0.4, 0.9
+        ];
+
         // Channel state tracking for Intro/Outro logic
         // Status: 'SILENT', 'INTRO', 'MAIN', 'OUTRO'
         this.channelStates = [
-            { status: 'SILENT', startTime: 0, leaveTime: 0 },
-            { status: 'SILENT', startTime: 0, leaveTime: 0 },
-            { status: 'SILENT', startTime: 0, leaveTime: 0 }
+            { status: 'SILENT', startTime: 0, leaveTime: 0, lastActiveTime: 0 },
+            { status: 'SILENT', startTime: 0, leaveTime: 0, lastActiveTime: 0 },
+            { status: 'SILENT', startTime: 0, leaveTime: 0, lastActiveTime: 0 }
         ];
     }
 
@@ -290,13 +305,16 @@ export class AudioSystem {
             // Performer B: Ostinato + String
             else if (i === 1) {
                 const scaleIndex = this.ostinatoPattern[beatNumber];
-                // Density based on state
-                let density = 0.5;
-                if (channel.status === 'INTRO') density = 0.2;
-                if (channel.status === 'OUTRO') density = 0.1;
-                if (channel.status === 'MAIN') density = 0.2 + pState.expression * 0.8;
 
-                if (scaleIndex !== undefined && Math.random() < density) {
+                // Deterministic Density
+                let effectiveExpression = 0;
+                if (channel.status === 'INTRO') effectiveExpression = 0.2; // Only base notes
+                else if (channel.status === 'OUTRO') effectiveExpression = 0.1;
+                else effectiveExpression = 0.2 + pState.expression * 0.8;
+
+                const threshold = this.ostinatoThresholds[beatNumber];
+
+                if (scaleIndex !== undefined && effectiveExpression > threshold) {
                     const noteIndex = scaleIndex % currentChord.notes.length;
                     const interval = currentChord.notes[noteIndex];
                     const f = baseFreq * 4 * Math.pow(2, interval/12);
@@ -314,16 +332,24 @@ export class AudioSystem {
 
             // Performer C: Arpeggio + String
             else if (i === 2) {
-                 let density = 0.5;
-                if (channel.status === 'INTRO') density = 0.1;
-                if (channel.status === 'OUTRO') density = 0.05;
-                if (channel.status === 'MAIN') density = 0.1 + pState.expression * 0.9;
+                // Deterministic Density
+                let effectiveExpression = 0;
+                if (channel.status === 'INTRO') effectiveExpression = 0.1;
+                else if (channel.status === 'OUTRO') effectiveExpression = 0.05;
+                else effectiveExpression = 0.1 + pState.expression * 0.9;
 
-                if (Math.random() < density) {
+                const threshold = this.arpThresholds[beatNumber];
+
+                if (effectiveExpression > threshold) {
+                    // Use beat number for deterministic note selection logic instead of random
                     const arpIndex = beatNumber % currentChord.notes.length;
                     const interval = currentChord.notes[arpIndex];
                     const f = baseFreq * 4 * Math.pow(2, interval/12);
-                    const vel = (0.3 + (timbre * 0.5)) * (0.8 + Math.random() * 0.4);
+
+                    // Add slight velocity variation based on beat position (accent) rather than random
+                    const accent = (beatNumber % 4 === 0) ? 1.2 : 0.9;
+                    const vel = (0.3 + (timbre * 0.5)) * accent;
+
                     inst.primary.playNote(f, time, 0.1, vel);
                 }
 
@@ -371,8 +397,11 @@ export class AudioSystem {
         for (let i = 0; i < 3; i++) {
             const p = this._performerStates[i];
             const channel = this.channelStates[i];
+            const GRACE_PERIOD = 2.0; // Seconds to wait before triggering Outro
 
             if (p.active) {
+                channel.lastActiveTime = now;
+
                 // If previously silent or outro, start Intro
                 if (channel.status === 'SILENT' || channel.status === 'OUTRO') {
                     channel.status = 'INTRO';
@@ -387,9 +416,12 @@ export class AudioSystem {
                 }
             } else {
                 // Performer gone
-                if (channel.status === 'MAIN' || channel.status === 'INTRO') {
-                    channel.status = 'OUTRO';
-                    channel.leaveTime = now;
+                // Only trigger OUTRO after grace period expires
+                if (now - channel.lastActiveTime > GRACE_PERIOD) {
+                    if (channel.status === 'MAIN' || channel.status === 'INTRO') {
+                        channel.status = 'OUTRO';
+                        channel.leaveTime = now;
+                    }
                 }
 
                 // Check Outro -> Silent
