@@ -269,7 +269,8 @@ export class LatticeViewport {
 
         // Color intensity: bright if active, dim if not
         const base = performer.baseColor;
-        const intensity = performer.hasPerformer ? 1.0 : 0.18;
+        // Interpolate intensity based on presence to match viewport ease-out
+        const intensity = THREE.MathUtils.lerp(0.18, 1.0, performer.presence);
         this.uniforms.uColor.value.setRGB(
             base.r * intensity,
             base.g * intensity,
