@@ -25,6 +25,10 @@ export class DebugOverlay {
                 CONFIG.viewMode = (CONFIG.viewMode + 1) % 3;
                 CONFIG.debug = (CONFIG.viewMode === 2);
             }
+            if (e.key === 'a' || e.key === 'A') {
+                CONFIG.enableAutopilot = !CONFIG.enableAutopilot;
+                console.log(`Autopilot: ${CONFIG.enableAutopilot ? 'ON' : 'OFF'}`);
+            }
         });
     }
 
@@ -66,6 +70,7 @@ export class DebugOverlay {
         if (metricsEl) {
             metricsEl.style.display = 'block';
             let text = '';
+            text += `Autopilot: ${CONFIG.enableAutopilot ? 'ON' : 'OFF'}\n`;
             performers.forEach((p, idx) => {
                 text += `P${idx} ${p.hasPerformer ? 'ON ' : 'off'}\n`;
                 text += `  depth: ${p.current.depth.toFixed(2)}  bpm: ${p.current.bpmPref.toFixed(1)}\n`;
