@@ -79,6 +79,10 @@ export class PerformanceManager {
                 return getX(a) - getX(b); // Ascending X (Left to Right)
             });
 
+            if (CONFIG.layout && CONFIG.layout.flipOrder) {
+                sortedPoses.reverse();
+            }
+
             // Assign sorted poses to performers [0, 1, 2]
             for (let i = 0; i < this.performers.length; i++) {
                 if (i < sortedPoses.length) {

@@ -1,4 +1,5 @@
 import * as THREE from 'three';
+import { CONFIG } from '../../core/Config.js';
 
 /**
  * Calculates the layout of viewports on the screen.
@@ -17,41 +18,64 @@ export class DynamicLayout {
      * @returns {Array} List of layout items containing index, rect (scissor), and corners (mask).
      */
     calculate(width, height, performers) {
-        // Calculate total presence to normalize widths
-        const totalPresence = performers.reduce((sum, p) => sum + p.presence, 0);
+        // 1. Identify active performers (presence > threshold)
+        // We need to keep track of their original index for rendering
+        const activeThreshold = CONFIG.layout && CONFIG.layout.activeThreshold ? CONFIG.layout.activeThreshold : 0.001;
+
+        const activeItems = performers
+            .map((p, index) => ({ performer: p, index: index }))
+            .filter(item => item.performer.presence > activeThreshold);
+
+        // If no performers, return empty layout
+        if (activeItems.length === 0) {
+            return [];
+        }
+
+        // 2. Calculate total presence of ACTIVE performers only
+        const totalPresence = activeItems.reduce((sum, item) => sum + item.performer.presence, 0);
         const safeTotal = Math.max(totalPresence, 0.001);
 
-        const layout = [];
+        // 3. Calculate target widths for ACTIVE performers
+        const widths = activeItems.map(item => (item.performer.presence / safeTotal) * width);
 
-        // Calculate target widths first
-        const widths = performers.map(p => (p.presence / safeTotal) * width);
-
-        // Calculate separator angles
-        // Line i (1 to N-1): x = sum(widths[0]...widths[i-1]). Angle = P[i-1].current.roll.
-
+        // 4. Calculate Boundaries
+        // Boundaries will be N+1 for N active performers
         const boundaries = [];
 
-        // Left edge of screen
+        // Boundary 0: Left edge of screen
         boundaries.push({ x: 0, angle: 0 });
 
         let accumWidth = 0;
-        for (let i = 0; i < performers.length - 1; i++) {
+        for (let i = 0; i < activeItems.length - 1; i++) {
             accumWidth += widths[i];
 
-            // Limit angle to avoid extreme skew
-            let angle = performers[i].current.roll || 0;
+            const leftP = activeItems[i].performer;
+            const rightP = activeItems[i+1].performer;
+
+            // Angle comes from the Left Performer's roll
+            let angle = leftP.current.roll || 0;
             angle = THREE.MathUtils.clamp(angle, -0.5, 0.5);
+
+            // Damping Logic:
+            // As a performer fades out, the angled divider between them and their neighbor should straighten.
+            // We use the minimum presence of the two neighbors sharing this boundary.
+            // If either side is weak, the boundary becomes vertical.
+            const jointPresence = Math.min(leftP.presence, rightP.presence);
+            // We can map jointPresence (0..1) to an ease curve if desired, but linear is fine for now.
+            // If presence is 1.0, factor is 1.0. If 0.0, factor is 0.0.
+            angle *= jointPresence;
 
             boundaries.push({ x: accumWidth, angle: angle });
         }
 
-        // Right edge of screen
+        // Boundary N: Right edge of screen
         boundaries.push({ x: width, angle: 0 });
 
-        // Generate Viewport Geometries
-        for (let i = 0; i < performers.length; i++) {
-            if (performers[i].presence < 0.001) continue;
+        const layout = [];
 
+        // 5. Generate Viewport Geometries for ACTIVE performers
+        for (let i = 0; i < activeItems.length; i++) {
+            const item = activeItems[i];
             const leftB = boundaries[i];
             const rightB = boundaries[i+1];
 
@@ -74,7 +98,7 @@ export class DynamicLayout {
             if (w <= 0) continue;
 
             layout.push({
-                index: i,
+                index: item.index, // Original index for mapping
                 rect: {
                     x: Math.floor(Math.max(0, minX)),
                     y: 0,
