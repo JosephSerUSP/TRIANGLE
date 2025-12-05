@@ -6,6 +6,7 @@ import { CONFIG } from '../../core/Config.js';
 /**
  * Manages the 3D scene rendering for a specific performer.
  * Handles the lattice grid and the performer's triangular representation.
+ * Focused on content rendering; mask handling is external.
  */
 export class LatticeViewport {
     /**
@@ -33,47 +34,9 @@ export class LatticeViewport {
         this.triMesh = null;
         this.triWire = null;
 
-        this.maskScene = new THREE.Scene();
-        this.maskCamera = new THREE.OrthographicCamera(-1, 1, 1, -1, 0, 1);
-        this.maskMesh = null;
-        this._initMask();
-
         this._initLattice();
         this._initTriangle();
         this._animateInLattice(4000);
-    }
-
-    /**
-     * Initializes the stencil mask geometry.
-     * @private
-     */
-    _initMask() {
-        const geometry = new THREE.BufferGeometry();
-        // 4 vertices for the quad (tl, tr, bl, br)
-        const vertices = new Float32Array([
-            -1, 1, 0,  // TL
-             1, 1, 0,  // TR
-            -1, -1, 0, // BL
-             1, -1, 0  // BR
-        ]);
-        // Index for two triangles
-        const indices = [0, 2, 1, 1, 2, 3];
-
-        geometry.setAttribute('position', new THREE.BufferAttribute(vertices, 3));
-        geometry.setIndex(indices);
-
-        const material = new THREE.MeshBasicMaterial({
-            color: 0xffffff,
-            colorWrite: false,
-            depthWrite: false,
-            stencilWrite: true,
-            stencilFunc: THREE.AlwaysStencilFunc,
-            stencilRef: 1,
-            stencilZPass: THREE.ReplaceStencilOp
-        });
-
-        this.maskMesh = new THREE.Mesh(geometry, material);
-        this.maskScene.add(this.maskMesh);
     }
 
     /**
@@ -278,83 +241,19 @@ export class LatticeViewport {
 
     /**
      * Renders the scene for this viewport.
-     * Uses stencil buffer to mask the viewport area based on the corners.
+     * Assumes the stencil buffer has already been masked by the caller.
      * @param {THREE.WebGLRenderer} renderer - The Three.js renderer.
      * @param {object} rect - The viewport bounding box {x, y, width, height}.
      * @param {import('../../PerformanceManager/state/Performer.js').Performer} performer - The state of the performer to render.
-     * @param {object} [corners] - The 4 corners of the mask {tl, tr, bl, br} in pixels.
      */
-    render(renderer, rect, performer, corners) {
+    render(renderer, rect, performer) {
         const { x, y, width, height } = rect;
 
-        // 1. Setup Mask
-        if (corners) {
-            const screenW = renderer.domElement.width / renderer.getPixelRatio();
-            const screenH = renderer.domElement.height / renderer.getPixelRatio();
-
-            // Map pixel coordinates to NDC (-1 to 1)
-            // Note: GL coordinates, Y is up. Screen Y is down usually, but let's check input.
-            // Typically in Three.js window coordinates: (0,0) is top-left.
-            // But for viewport/scissor, (0,0) is bottom-left.
-            // Let's assume corners are passed in standard screen coords (0,0 top-left) for X,
-            // but we need to map to NDC.
-            // Wait, App.js logic for corners needs to be consistent.
-            // Let's assume corners are x-coordinates (pixels).
-
-            const toNDC = (px, py) => {
-                return {
-                    x: (px / screenW) * 2 - 1,
-                    y: -(py / screenH) * 2 + 1
-                };
-            };
-
-            const positions = this.maskMesh.geometry.attributes.position.array;
-
-            // TL
-            let ndc = toNDC(corners.tl, 0);
-            positions[0] = ndc.x;
-            positions[1] = ndc.y;
-
-            // TR
-            ndc = toNDC(corners.tr, 0);
-            positions[3] = ndc.x;
-            positions[4] = ndc.y;
-
-            // BL
-            ndc = toNDC(corners.bl, screenH);
-            positions[6] = ndc.x;
-            positions[7] = ndc.y;
-
-            // BR
-            ndc = toNDC(corners.br, screenH);
-            positions[9] = ndc.x;
-            positions[10] = ndc.y;
-
-            this.maskMesh.geometry.attributes.position.needsUpdate = true;
-        }
-
-        // 2. Render Mask to Stencil
-        renderer.autoClear = false;
-        renderer.clearStencil();
-
-        // Disable color/depth write globally for mask pass (handled by material but good to be safe)
-        // Actually material settings handle it.
-
-        // We render the mask fullscreen (camera is -1 to 1)
-        // But we want to limit processing to the scissor rect if possible?
-        // Yes, we can keep using setScissor for the bounding box.
-        renderer.setViewport(0, 0, window.innerWidth, window.innerHeight);
-        renderer.setScissor(x, y, width, height);
-        renderer.setScissorTest(true);
-
-        renderer.render(this.maskScene, this.maskCamera);
-
-        // 3. Render Scene
         // Update uniforms
         this.camera.aspect = width / height;
         this.camera.updateProjectionMatrix();
-        // Camera viewport should match the scissor rect effectively
-        // but since we are masking with stencil, we can just set viewport to the rect.
+
+        // Match viewport to the scissor rect
         renderer.setViewport(x, y, width, height);
 
         const now = performance.now() * 0.001;
@@ -370,7 +269,8 @@ export class LatticeViewport {
 
         // Color intensity: bright if active, dim if not
         const base = performer.baseColor;
-        const intensity = performer.hasPerformer ? 1.0 : 0.18;
+        // Interpolate intensity based on presence to match viewport ease-out
+        const intensity = THREE.MathUtils.lerp(0.18, 1.0, performer.presence);
         this.uniforms.uColor.value.setRGB(
             base.r * intensity,
             base.g * intensity,

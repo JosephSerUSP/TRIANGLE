@@ -298,7 +298,8 @@ export class Performer {
 
         // Presence logic for smooth transitions
         const targetPresence = this.hasPerformer ? 1.0 : 0.0;
-        this.presence = THREE.MathUtils.lerp(this.presence, targetPresence, 0.05);
+        const transitionSmoothing = CONFIG.layout ? CONFIG.layout.transitionSmoothing : 0.05;
+        this.presence = THREE.MathUtils.lerp(this.presence, targetPresence, transitionSmoothing);
         if (Math.abs(this.presence - targetPresence) < 0.001) {
             this.presence = targetPresence;
         }

@@ -26,6 +26,12 @@ export const CONFIG = {
      * 2: Lattice + Triangle + Debug
      */
     viewMode: 0,
+    /** Layout and transition settings */
+    layout: {
+        transitionSmoothing: 0.05,
+        flipOrder: true,
+        activeThreshold: 0.001
+    },
     /** Grid visual settings */
     grid: {
         size: 10000,
