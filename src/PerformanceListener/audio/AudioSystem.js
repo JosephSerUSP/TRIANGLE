@@ -50,10 +50,11 @@ export class AudioSystem {
 
         // Channel state tracking for Intro/Outro logic
         // Status: 'SILENT', 'INTRO', 'MAIN', 'OUTRO'
+        // graceTimer helps prevent rapid resets if a performer flickers
         this.channelStates = [
-            { status: 'SILENT', startTime: 0, leaveTime: 0 },
-            { status: 'SILENT', startTime: 0, leaveTime: 0 },
-            { status: 'SILENT', startTime: 0, leaveTime: 0 }
+            { status: 'SILENT', startTime: 0, leaveTime: 0, graceTimer: 0 },
+            { status: 'SILENT', startTime: 0, leaveTime: 0, graceTimer: 0 },
+            { status: 'SILENT', startTime: 0, leaveTime: 0, graceTimer: 0 }
         ];
     }
 
@@ -128,16 +129,25 @@ export class AudioSystem {
 
     _createReverbImpulse() {
         const rate = this.ctx.sampleRate;
-        const length = rate * 2.0; // 2 seconds
+        const length = rate * 2.5; // Slightly longer tail
         const decay = 2.0;
         const impulse = this.ctx.createBuffer(2, length, rate);
         const left = impulse.getChannelData(0);
         const right = impulse.getChannelData(1);
 
+        // Schroeder-ish noise burst with exponential decay
         for (let i = 0; i < length; i++) {
-            const n = length - i;
-            left[i] = (Math.random() * 2 - 1) * Math.pow(n / length, decay);
-            right[i] = (Math.random() * 2 - 1) * Math.pow(n / length, decay);
+            // Envelope: Fast attack, exponential decay
+            // Avoiding purely linear 'n/length' which sounds unnatural
+            const t = i / rate;
+            const envelope = Math.pow(1 - (i / length), decay);
+
+            // White noise
+            const noiseL = (Math.random() * 2 - 1);
+            const noiseR = (Math.random() * 2 - 1);
+
+            left[i] = noiseL * envelope;
+            right[i] = noiseR * envelope;
         }
         this.reverb.buffer = impulse;
     }
@@ -296,7 +306,14 @@ export class AudioSystem {
                 if (channel.status === 'OUTRO') density = 0.1;
                 if (channel.status === 'MAIN') density = 0.2 + pState.expression * 0.8;
 
-                if (scaleIndex !== undefined && Math.random() < density) {
+                // Deterministic pattern masking
+                // Use the beatNumber to determine if we should play.
+                // A seeded pseudo-random check ensures that for a given density,
+                // the pattern of ON/OFF notes is fixed per beat index.
+                const beatHash = Math.abs(Math.sin(beatNumber * 12.9898 + 78.233)) % 1; // Simple deterministic hash
+                const shouldPlay = beatHash < density;
+
+                if (scaleIndex !== undefined && shouldPlay) {
                     const noteIndex = scaleIndex % currentChord.notes.length;
                     const interval = currentChord.notes[noteIndex];
                     const f = baseFreq * 4 * Math.pow(2, interval/12);
@@ -319,11 +336,21 @@ export class AudioSystem {
                 if (channel.status === 'OUTRO') density = 0.05;
                 if (channel.status === 'MAIN') density = 0.1 + pState.expression * 0.9;
 
-                if (Math.random() < density) {
+                // Deterministic masking for Arpeggio
+                // We want a more 16th-note feel, filling in gaps as density rises
+                const beatHash = Math.abs(Math.sin(beatNumber * 43758.5453 + this.barCounter)) % 1;
+                // Add barCounter to the hash to give it some evolution over bars, but repeatable
+                // Actually, let's keep it strictly tied to beatNumber for consistency within a loop,
+                // or add barCounter logic carefully.
+                // To keep it 'deterministic but responsive', let's use just beatNumber for consistency:
+                const consistentHash = Math.abs(Math.sin(beatNumber * 93.9898)) % 1;
+
+                if (consistentHash < density) {
                     const arpIndex = beatNumber % currentChord.notes.length;
                     const interval = currentChord.notes[arpIndex];
                     const f = baseFreq * 4 * Math.pow(2, interval/12);
-                    const vel = (0.3 + (timbre * 0.5)) * (0.8 + Math.random() * 0.4);
+                    // Less random velocity
+                    const vel = (0.3 + (timbre * 0.5));
                     inst.primary.playNote(f, time, 0.1, vel);
                 }
 
@@ -354,6 +381,7 @@ export class AudioSystem {
         const now = this.ctx.currentTime;
         const INTRO_DURATION = 8.0; // 8 seconds (approx 4 bars at 120bpm)
         const OUTRO_DURATION = 4.0; // 4 seconds linger
+        const GRACE_PERIOD = 2.0; // Seconds to wait before starting Outro
 
         // Calculate Kick Intensity
         // Silent < 2
@@ -373,8 +401,21 @@ export class AudioSystem {
             const channel = this.channelStates[i];
 
             if (p.active) {
-                // If previously silent or outro, start Intro
-                if (channel.status === 'SILENT' || channel.status === 'OUTRO') {
+                // Reset grace timer if performer is back
+                channel.graceTimer = 0;
+
+                // If previously silent, start Intro
+                // Note: If we were in OUTRO, we seamlessly go back to where we were?
+                // Actually, if we are in OUTRO, it means we committed to leaving.
+                // But if we are in GRACE period (still MAIN or INTRO but inactive), we just stay.
+
+                if (channel.status === 'SILENT') {
+                    channel.status = 'INTRO';
+                    channel.startTime = now;
+                } else if (channel.status === 'OUTRO') {
+                    // Recovering from OUTRO -> INTRO (or MAIN?)
+                    // If we recovered quickly, maybe go back to MAIN?
+                    // For now, standard behavior: restart INTRO logic
                     channel.status = 'INTRO';
                     channel.startTime = now;
                 }
@@ -386,13 +427,22 @@ export class AudioSystem {
                     }
                 }
             } else {
-                // Performer gone
+                // Performer inactive.
+                // Handle Grace Period Logic for MAIN/INTRO states
                 if (channel.status === 'MAIN' || channel.status === 'INTRO') {
-                    channel.status = 'OUTRO';
-                    channel.leaveTime = now;
+                    if (channel.graceTimer === 0) {
+                        channel.graceTimer = now;
+                    }
+
+                    // Only transition to OUTRO if grace period exceeded
+                    if (now - channel.graceTimer > GRACE_PERIOD) {
+                         channel.status = 'OUTRO';
+                         channel.leaveTime = now;
+                         channel.graceTimer = 0; // Reset
+                    }
                 }
 
-                // Check Outro -> Silent
+                // If we are already in OUTRO (or just switched to it)
                 if (channel.status === 'OUTRO') {
                     if (now - channel.leaveTime > OUTRO_DURATION) {
                         channel.status = 'SILENT';
