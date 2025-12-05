@@ -102,7 +102,8 @@ export class KickDrum extends Synthesizer {
 }
 
 /**
- * A bass synthesizer with a low-pass filter.
+ * A bass synthesizer with a sub-oscillator and low-pass filter.
+ * Refactored for deeper, richer sound.
  * @extends Synthesizer
  */
 export class PulseBass extends Synthesizer {
@@ -116,8 +117,8 @@ export class PulseBass extends Synthesizer {
         this.filter = ctx.createBiquadFilter();
         this.filter.type = 'lowpass';
         this.filter.frequency.value = 400;
-        this.filter.Q.value = 5;
-        this.filter.connect(this.output); // Connect filter to output (which goes to panner)
+        this.filter.Q.value = 2; // Reduced Q for fatter sound
+        this.filter.connect(this.output);
 
         // Config volume
         this.output.gain.value = CONFIG.audio.mix.bass;
@@ -125,29 +126,37 @@ export class PulseBass extends Synthesizer {
 
     modulate(params) {
         if (params.timbre) {
-            // Map 0..1 to filter freq 100..1000
-            const freq = 100 + params.timbre * 900;
+            // Map 0..1 to filter freq 80..800
+            const freq = 80 + params.timbre * 720;
             this.filter.frequency.setTargetAtTime(freq, this.ctx.currentTime, 0.1);
         }
     }
 
     playNote(freq, time, duration, velocity) {
+        // Main Oscillator
         const osc = this.ctx.createOscillator();
         osc.type = 'sawtooth';
         osc.frequency.value = freq;
 
+        // Sub Oscillator
+        const sub = this.ctx.createOscillator();
+        sub.type = 'sine';
+        sub.frequency.value = freq * 0.5; // Octave down
+
         const gain = this.ctx.createGain();
 
         // Envelope
-        const attack = 0.01;
-        const decay = 0.1;
-        const sustain = 0.5;
-        const release = 0.1;
+        const attack = 0.02;
+        const decay = 0.2;
+        const sustain = 0.6;
+        const release = 0.2;
 
         osc.connect(gain);
+        sub.connect(gain); // Mix in sub
         gain.connect(this.filter);
 
         osc.start(time);
+        sub.start(time);
 
         gain.gain.setValueAtTime(0, time);
         gain.gain.linearRampToValueAtTime(velocity, time + attack);
@@ -156,17 +165,18 @@ export class PulseBass extends Synthesizer {
         gain.gain.exponentialRampToValueAtTime(0.001, time + duration + release);
 
         osc.stop(time + duration + release + 0.1);
+        sub.stop(time + duration + release + 0.1);
 
-        // Filter envelope for "wow" effect - added to base cutoff
-        // We use setTargetAtTime in modulate, so here we might want to punch it
+        // Filter envelope
         this.filter.frequency.setValueAtTime(200, time);
-        this.filter.frequency.exponentialRampToValueAtTime(2000, time + attack);
+        this.filter.frequency.exponentialRampToValueAtTime(1000, time + attack);
         this.filter.frequency.exponentialRampToValueAtTime(400, time + attack + decay);
     }
 }
 
 /**
- * A string pad synthesizer with a low-pass filter.
+ * A string pad synthesizer with 3 oscillators for a lush, rich texture.
+ * Refactored for "Fuller, Richer" sound.
  * @extends Synthesizer
  */
 export class StringPad extends Synthesizer {
@@ -182,7 +192,8 @@ export class StringPad extends Synthesizer {
 
         this.filter = ctx.createBiquadFilter();
         this.filter.type = 'lowpass';
-        this.filter.frequency.value = 2000;
+        this.filter.frequency.value = 1500;
+        this.filter.Q.value = 0.5;
 
         // Input to this synth goes to filter first
         this.input = ctx.createGain();
@@ -193,7 +204,7 @@ export class StringPad extends Synthesizer {
     modulate(params) {
         if (params.timbre) {
             // Open filter with expression
-            const freq = 500 + params.timbre * 4000;
+            const freq = 400 + params.timbre * 5000;
             this.filter.frequency.setTargetAtTime(freq, this.ctx.currentTime, 0.5);
         }
     }
@@ -201,37 +212,44 @@ export class StringPad extends Synthesizer {
     playNote(freq, time, duration, velocity) {
         const osc1 = this.ctx.createOscillator();
         const osc2 = this.ctx.createOscillator();
+        const osc3 = this.ctx.createOscillator();
+
         osc1.type = 'sawtooth';
         osc2.type = 'sawtooth';
+        osc3.type = 'triangle'; // Body
 
         osc1.frequency.value = freq;
-        osc2.frequency.value = freq * 1.002; // Detune
+        osc2.frequency.value = freq * 1.003; // Detune +
+        osc3.frequency.value = freq * 0.997; // Detune -
 
         const gain = this.ctx.createGain();
 
         osc1.connect(gain);
         osc2.connect(gain);
-        gain.connect(this.filter); // Connect to the class-wide filter
+        osc3.connect(gain);
+        gain.connect(this.filter);
 
-        const attack = 0.5;
-        const release = 1.0;
+        const attack = 0.8;
+        const release = 1.5;
 
         osc1.start(time);
         osc2.start(time);
+        osc3.start(time);
 
         gain.gain.setValueAtTime(0, time);
-        // Increased velocity scalar from 0.3 to 0.6
-        gain.gain.linearRampToValueAtTime(velocity * 0.6, time + attack);
-        gain.gain.setValueAtTime(velocity * 0.6, time + duration);
+        gain.gain.linearRampToValueAtTime(velocity * 0.5, time + attack); // Lower gain per osc to prevent clipping
+        gain.gain.setValueAtTime(velocity * 0.5, time + duration);
         gain.gain.linearRampToValueAtTime(0, time + duration + release);
 
         osc1.stop(time + duration + release);
         osc2.stop(time + duration + release);
+        osc3.stop(time + duration + release);
     }
 }
 
 /**
- * A pluck synthesizer with a low-pass filter.
+ * A pluck synthesizer with dual detuned oscillators.
+ * Refactored for less harshness and more body.
  * @extends Synthesizer
  */
 export class PluckSynth extends Synthesizer {
@@ -248,7 +266,7 @@ export class PluckSynth extends Synthesizer {
 
         this.filter = this.ctx.createBiquadFilter();
         this.filter.type = 'lowpass';
-        this.filter.frequency.value = 800;
+        this.filter.frequency.value = 1200;
         this.filter.Q.value = 1;
 
         this.filter.connect(this.output);
@@ -256,35 +274,45 @@ export class PluckSynth extends Synthesizer {
 
     modulate(params) {
          if (params.timbre) {
-            const freq = 400 + params.timbre * 2000;
+            const freq = 600 + params.timbre * 2500;
             this.filter.frequency.setTargetAtTime(freq, this.ctx.currentTime, 0.1);
         }
     }
 
     playNote(freq, time, duration, velocity) {
-        const osc = this.ctx.createOscillator();
-        osc.type = 'square';
-        osc.frequency.value = freq;
+        const osc1 = this.ctx.createOscillator();
+        const osc2 = this.ctx.createOscillator();
+
+        osc1.type = 'square';
+        osc2.type = 'sawtooth'; // Blend square and saw for bite + body
+
+        osc1.frequency.value = freq;
+        osc2.frequency.value = freq * 1.002;
 
         const gain = this.ctx.createGain();
 
-        osc.connect(gain);
-        gain.connect(this.filter); // Use class filter
+        osc1.connect(gain);
+        osc2.connect(gain);
+        gain.connect(this.filter);
 
         const attack = 0.01;
-        const release = 0.2;
+        const release = 0.3;
 
-        osc.start(time);
+        osc1.start(time);
+        osc2.start(time);
+
         gain.gain.setValueAtTime(0, time);
-        gain.gain.linearRampToValueAtTime(velocity * 0.5, time + attack);
+        gain.gain.linearRampToValueAtTime(velocity * 0.3, time + attack);
         gain.gain.exponentialRampToValueAtTime(0.001, time + attack + release);
 
-        osc.stop(time + attack + release + 0.1);
+        osc1.stop(time + attack + release + 0.1);
+        osc2.stop(time + attack + release + 0.1);
     }
 }
 
 /**
- * An arpeggio synthesizer.
+ * An arpeggio synthesizer with a pure bell-like tone.
+ * Refactored to use Sine + Triangle mix.
  * @extends Synthesizer
  */
 export class ArpSynth extends Synthesizer {
@@ -299,27 +327,33 @@ export class ArpSynth extends Synthesizer {
         this.output.gain.value = CONFIG.audio.mix.arp;
     }
 
-    // ArpSynth doesn't strictly need a filter modulation but we can add one if we want
-    // keeping it simple for now, just volume/pan
-
     playNote(freq, time, duration, velocity) {
-        const osc = this.ctx.createOscillator();
-        osc.type = 'triangle';
-        osc.frequency.value = freq;
+        const osc1 = this.ctx.createOscillator();
+        const osc2 = this.ctx.createOscillator();
+
+        osc1.type = 'sine';
+        osc2.type = 'triangle';
+
+        osc1.frequency.value = freq;
+        osc2.frequency.value = freq * 2; // Octave up harmonic
 
         const gain = this.ctx.createGain();
 
-        osc.connect(gain);
+        osc1.connect(gain);
+        osc2.connect(gain);
         gain.connect(this.output);
 
         const attack = 0.005;
-        const decay = 0.1;
+        const decay = 0.2;
 
-        osc.start(time);
+        osc1.start(time);
+        osc2.start(time);
+
         gain.gain.setValueAtTime(0, time);
-        gain.gain.linearRampToValueAtTime(velocity * 0.4, time + attack);
+        gain.gain.linearRampToValueAtTime(velocity * 0.3, time + attack);
         gain.gain.exponentialRampToValueAtTime(0.001, time + attack + decay);
 
-        osc.stop(time + attack + decay + 0.1);
+        osc1.stop(time + attack + decay + 0.1);
+        osc2.stop(time + attack + decay + 0.1);
     }
 }
