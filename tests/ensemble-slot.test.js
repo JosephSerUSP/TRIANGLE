@@ -28,6 +28,21 @@ test('one-frame dropout does not deactivate the slot', () => {
     assert.equal(s.active, false);
 });
 
+test('triangle snaps to the body when it first appears, then smooths', () => {
+    const s = new EnsembleSlot(def, CONFIG.smoothing);
+    const withTri = (x) => {
+        const t = g();
+        Object.assign(t.triangle, { visible: true, vertices: [{ x, y: 0.3 }, { x: x - 0.4, y: -0.2 }, { x: x + 0.4, y: -0.2 }] });
+        return t;
+    };
+    run(s, 0.2, 1 / 60, withTri(0.5));                 // becomes active; first visible frame snaps
+    assert.equal(s.current.triangle.visible, true);
+    assert.ok(Math.abs(s.current.triangle.vertices[0].x - 0.5) < 1e-9);
+    run(s, 1 / 60, 1 / 60, withTri(-0.5));              // big jump while visible -> smoothed, not snapped
+    const x = s.current.triangle.vertices[0].x;
+    assert.ok(x < 0.5 && x > -0.5);
+});
+
 test('snapshot does not alias internal state', () => {
     const s = new EnsembleSlot(def, CONFIG.smoothing);
     run(s, 0.5, 1 / 60, g());
