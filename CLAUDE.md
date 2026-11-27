@@ -24,5 +24,5 @@ Webcam-driven audio-visual instrument, browser-only, zero build. GitHub: `Joseph
 
 ## Next
 - Play-test the mapping modes; choose the default (`CONFIG.defaults.mappingMode`).
-- Branches (2026-11-27): merged remote ones were already gone; 9 merged local ones deleted. Left: 6 unmerged remote branches and ~29 unmerged local ones. Deleting those loses work, so it needs Jo's per-branch OK.
+- Branches: inventory + suggested handling in `docs/branches.md` (2026-11-27). Deleting unmerged ones needs Jo's OK; the audio experiments there may feed D1.
 - Verified 2026-11-27 in the in-app browser via replay (render, layout, HUD, keys, audio unlock, mapping modes). Live webcam still needs a check by Jo.
