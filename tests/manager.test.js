@@ -45,6 +45,17 @@ test('takeover survives a one-frame dropout, then hands back after the grace per
     assert.equal(f.slots[1].binding, 'virtual');
 });
 
+test('autopilot off -> on: empty slots go back to virtual performers', () => {
+    const m = new PerformanceManager(CONFIG, fakeVision([pose()]));
+    let t = 0, f;
+    const run = n => { for (let i = 0; i < n; i++) { t += 1 / 60; f = m.tick(t, 1 / 60); } };
+    m.setAutopilot(false); run(30);
+    assert.deepEqual(f.slots.map(s => s.binding), ['physical', 'physical', 'physical']);
+    m.setAutopilot(true); run(30);
+    assert.deepEqual(f.slots.map(s => s.binding), ['physical', 'virtual', 'virtual']);
+    assert.equal(f.slots[0].active, true);
+});
+
 test('config is immutable', () => {
     assert.throws(() => { CONFIG.defaults.viewMode = 2; });
 });
