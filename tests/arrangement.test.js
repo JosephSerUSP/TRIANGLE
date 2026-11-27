@@ -97,3 +97,15 @@ test('harmony bass follows height through chord tones only', async () => {
     assert.equal(heightTone({ transpose: iv[1] }, CONFIG.audio), 1);
     assert.equal(heightTone({ transpose: iv[iv.length - 1] }, CONFIG.audio), 2);
 });
+
+test('harmony lifts voices by chord tones, staying inside every chord', async () => {
+    const { chordTone, harmonyStep } = await import('../src/PerformanceListener/audio/Arrangement.js');
+    for (const c of CHORD_PROGRESSION) {
+        const pcs = new Set(c.notes.map(n => ((n % 12) + 12) % 12));
+        for (let i = 0; i < 12; i++) assert.ok(pcs.has(((chordTone(c, i) % 12) + 12) % 12));
+    }
+    assert.equal(chordTone(CHORD_PROGRESSION[0], 5), CHORD_PROGRESSION[0].notes[0] + 12);
+    const iv = CONFIG.audio.harmonyIntervals;
+    assert.equal(harmonyStep({ transpose: 0 }, CONFIG.audio), 0);
+    assert.equal(harmonyStep({ transpose: iv[3] }, CONFIG.audio), 3);
+});

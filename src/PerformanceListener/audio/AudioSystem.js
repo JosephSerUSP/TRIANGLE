@@ -7,7 +7,7 @@ import { clamp } from '../../core/MathUtils.js';
 import { CHORD_PROGRESSION, CHORD_TONE } from './MusicTheory.js';
 import { PulseBass, StringPad, PluckSynth, ArpSynth, KickDrum } from './Instruments.js';
 import {
-    chordIndexForBar, stepChannel, createChannel, voiceControls, targetTempo, resyncNoteTime, gate, tiltOffset, evolution, bassWalkInterval, heightTone
+    chordIndexForBar, stepChannel, createChannel, voiceControls, targetTempo, resyncNoteTime, gate, tiltOffset, evolution, bassWalkInterval, heightTone, chordTone, harmonyStep
 } from './Arrangement.js';
 
 const PRIMARY = { bass: PulseBass, ostinato: PluckSynth, arp: ArpSynth };
@@ -124,7 +124,8 @@ export class AudioSystem {
             v.pad.setPan(spread ? clamp(ctl.pan - spread, -1, 1) : ctl.pan * 0.5, time);
             v.pad.modulate({ timbre }, time);
             if (ch.status === 'SILENT') return;
-            const tr = ctl.transpose;
+            // harmony/sculpt: hand height lifts melodic voices by whole chord tones.
+            const up = harmonyStep(ctl, this.cfg);
             // sculpt: parts build up over the first evolutionSec of a performer's stay.
             const arc = ctl.deterministic ? 0.5 + 0.5 * evolution(ch, this.ctx.currentTime, this.cfg.evolutionSec) : 1;
 
@@ -151,28 +152,28 @@ export class AudioSystem {
                 }
                 const padBars = ch.status === 'MAIN' ? 2 : 4;
                 if (beat === 0 && this.bar % padBars === 0) {
-                    v.pad.playNote(this._freq(chord.notes[CHORD_TONE.root] + tr, 2), time, 4.0, 0.4 * timbre);
+                    v.pad.playNote(this._freq(chordTone(chord, CHORD_TONE.root + up), 2), time, 4.0, 0.4 * timbre);
                 }
             } else if (v.role === 'ostinato') {
                 const density = { INTRO: 0.2, OUTRO: 0.1, MAIN: 0.2 + ctl.expression * 0.8 }[ch.status] * arc;
                 if (gate(density, beat, this.bar, i, ctl.deterministic)) {
                     const len = chord.notes.length;
-                    const n = chord.notes[(((this.ostinatoPattern[beat] + tiltOffset(ctl)) % len) + len) % len];
-                    v.primary.playNote(this._freq(n + tr, 4), time, 0.1, 0.3 + timbre * 0.6);
+                    const base = (((this.ostinatoPattern[beat] + tiltOffset(ctl)) % len) + len) % len;
+                    v.primary.playNote(this._freq(chordTone(chord, base + up), 4), time, 0.1, 0.3 + timbre * 0.6);
                 }
                 if (beat === 0 && this.bar % 2 === 0) {
-                    v.pad.playNote(this._freq(chord.notes[CHORD_TONE.fifth] + tr, 4), time, 4.0, 0.3 * timbre);
+                    v.pad.playNote(this._freq(chordTone(chord, CHORD_TONE.fifth + up), 4), time, 4.0, 0.3 * timbre);
                 }
             } else {
                 const density = { INTRO: 0.1, OUTRO: 0.05, MAIN: 0.1 + ctl.expression * 0.9 }[ch.status] * arc;
                 if (gate(density, beat, this.bar, i, ctl.deterministic)) {
                     const len = chord.notes.length;
-                    const n = chord.notes[(((beat + tiltOffset(ctl)) % len) + len) % len];
+                    const base = (((beat + tiltOffset(ctl)) % len) + len) % len;
                     const vel = (0.3 + timbre * 0.5) * (0.8 + Math.random() * 0.4);
-                    v.primary.playNote(this._freq(n + tr, 4), time, 0.1, vel);
+                    v.primary.playNote(this._freq(chordTone(chord, base + up), 4), time, 0.1, vel);
                 }
                 if (beat === 8 && this.bar % 2 === 0) {
-                    v.pad.playNote(this._freq(chord.notes[CHORD_TONE.third] + tr, 2), time, 4.0, 0.3 * timbre);
+                    v.pad.playNote(this._freq(chordTone(chord, CHORD_TONE.third + up), 2), time, 4.0, 0.3 * timbre);
                 }
             }
         });

@@ -35,7 +35,7 @@ Allow the camera, then click or press any key to start the sound.
 |---|---|
 | `canon` | Fixed progression at 120 BPM; hand height = expression only |
 | `tempo` | `canon` + average hand span of active slots sets tempo (wide = slow, 80–140 BPM) |
-| `harmony` | `tempo` + each slot's hand height transposes its voice by a chord-friendly interval |
+| `harmony` | `tempo` + each slot's hand height lifts its voice by whole chord tones (always in the current chord) |
 | `sculpt` | `harmony` + hand roll walks the chord tones, deterministic rhythm (same gesture = same groove), wider stereo per slot |
 
 URL options: `?mode=canon|tempo|harmony|sculpt`, `?autopilot=0|1`, `?view=0|1|2`, `?seed=<n>` (repeatable autopilot personalities: same noise offsets and sleep/wake rolls) (see `docs/d1-mapping-modes.md`).

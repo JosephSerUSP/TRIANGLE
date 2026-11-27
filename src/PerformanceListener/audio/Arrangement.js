@@ -91,6 +91,24 @@ export function bassWalkInterval(chord, walk) {
 }
 
 /**
+ * Tone of `chord` at chord-index `idx`, continuing into higher octaves past the
+ * last tone (idx 5 on a 5-note chord = root + 12). Keeps every note in the chord.
+ */
+export function chordTone(chord, idx) {
+    const len = chord.notes.length;
+    const i = ((idx % len) + len) % len;
+    return chord.notes[i] + 12 * Math.floor(idx / len);
+}
+
+/**
+ * How many chord tones hand height lifts a voice in harmony/sculpt (0..n-1):
+ * the rank of the slot's transpose in harmonyIntervals. 0 in other modes.
+ */
+export function harmonyStep(ctl, audioCfg) {
+    return ctl.transpose ? Math.max(0, audioCfg.harmonyIntervals.indexOf(ctl.transpose)) : 0;
+}
+
+/**
  * Chord-tone step (0 root, 1 3rd, 2 5th) for the bass from the harmony
  * transpose rank: low hands = root, middle = 3rd, high = 5th.
  */
