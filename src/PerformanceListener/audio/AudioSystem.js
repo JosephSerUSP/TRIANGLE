@@ -7,7 +7,7 @@ import { clamp } from '../../core/MathUtils.js';
 import { CHORD_PROGRESSION, CHORD_TONE } from './MusicTheory.js';
 import { PulseBass, StringPad, PluckSynth, ArpSynth, KickDrum } from './Instruments.js';
 import {
-    chordIndexForBar, stepChannel, createChannel, voiceControls, targetTempo, resyncNoteTime, gate, tiltOffset, evolution, bassWalkInterval, heightTone, chordTone, harmonyStep
+    chordIndexForBar, stepChannel, createChannel, voiceControls, targetTempo, resyncNoteTime, gate, tiltOffset, evolution, bassWalkInterval, heightTone, chordTone, harmonyStep, stepNoise
 } from './Arrangement.js';
 
 const PRIMARY = { bass: PulseBass, ostinato: PluckSynth, arp: ArpSynth };
@@ -169,7 +169,8 @@ export class AudioSystem {
                 if (gate(density, beat, this.bar, i, ctl.deterministic)) {
                     const len = chord.notes.length;
                     const base = (((beat + tiltOffset(ctl)) % len) + len) % len;
-                    const vel = (0.3 + timbre * 0.5) * (0.8 + Math.random() * 0.4);
+                    const accent = stepNoise(beat, this.bar, i, ctl.deterministic, Math.random, 1.7);
+                    const vel = (0.3 + timbre * 0.5) * (0.8 + accent * 0.4);
                     v.primary.playNote(this._freq(chordTone(chord, base + up), 4), time, 0.1, vel);
                 }
                 if (beat === 8 && this.bar % 2 === 0) {

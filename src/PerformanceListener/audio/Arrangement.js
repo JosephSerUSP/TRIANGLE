@@ -66,9 +66,14 @@ export function voiceControls(slot, audioCfg, mode) {
  * (idea from the audio-refactor-deterministic branches); other modes use `rand`.
  */
 export function gate(density, beat, bar, slotId, deterministic, rand = Math.random) {
-    if (!deterministic) return rand() < density;
-    const x = Math.sin((bar % 4) * 78.233 + beat * 12.9898 + slotId * 37.719) * 43758.5453;
-    return x - Math.floor(x) < density;
+    return stepNoise(beat, bar, slotId, deterministic, rand) < density;
+}
+
+/** 0..1 per-step value: hashed from (bar % 4, beat, slot) when deterministic. */
+export function stepNoise(beat, bar, slotId, deterministic, rand = Math.random, salt = 0) {
+    if (!deterministic) return rand();
+    const x = Math.sin((bar % 4) * 78.233 + beat * 12.9898 + slotId * 37.719 + salt) * 43758.5453;
+    return x - Math.floor(x);
 }
 
 /**
