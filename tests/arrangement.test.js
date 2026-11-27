@@ -117,3 +117,11 @@ test('harmony lifts voices by chord tones, staying inside every chord', async ()
     assert.equal(harmonyStep({ transpose: 0 }, CONFIG.audio), 0);
     assert.equal(harmonyStep({ transpose: iv[3] }, CONFIG.audio), 3);
 });
+
+test('tempo falls back to base when nobody is active (no divide-by-zero)', () => {
+    for (const mode of CONFIG.audio.mappingModes) {
+        assert.equal(targetTempo([], CONFIG.audio, mode), CONFIG.audio.baseTempo);
+        const idle = [voiceControls(snap(1, 0.5, false), CONFIG.audio, mode)];
+        assert.equal(targetTempo(idle, CONFIG.audio, mode), CONFIG.audio.baseTempo);
+    }
+});
