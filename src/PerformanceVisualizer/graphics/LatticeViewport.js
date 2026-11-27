@@ -24,7 +24,7 @@ export class LatticeViewport {
         this.uniforms = {
             uTime: { value: 0 },
             uPhaseZ: { value: 0 },
-            uGridSize: { value: visualConfig.gridSize },
+            uGridSize: { value: this.visual.gridSize },
             uColor: { value: new THREE.Color(colorHex) },
             uRotation: { value: new THREE.Vector3(0, 0, 0) }
         };
@@ -46,8 +46,8 @@ export class LatticeViewport {
      * @private
      */
     _initLattice() {
-        const size = visualConfig.gridSize;
-        const divisions = visualConfig.gridDivisions;
+        const size = this.visual.gridSize;
+        const divisions = this.visual.gridDivisions;
         const step = size / divisions;
 
         this.finalPositions = [];
