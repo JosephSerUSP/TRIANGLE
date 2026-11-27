@@ -72,7 +72,8 @@ export const CONFIG = deepFreeze({
         phaseScale: 500.0,
         triangleScale: 320,
         triangleZ: 500,
-        /** Slot whose lattice is shown, dimmed, when nobody is present (null = black). */
+        /** Lattice shown, dimmed, when nobody is present: the last one on screen,
+         *  or this slot at startup (null = black screen). */
         idleSlot: 0
     },
 

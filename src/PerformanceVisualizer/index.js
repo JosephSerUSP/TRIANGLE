@@ -72,7 +72,10 @@ export class PerformanceVisualizer {
         this.renderer.clear();
         let layout = this.layoutSystem.calculate(width, height, slots);
         // Idle stage: nobody present -> a dim full-screen lattice instead of black.
-        const idle = this.config.visual.idleSlot;
+        // Keep the last slot that was on screen so the fade-out doesn't change colour.
+        if (layout.length) this._lastShown = layout[layout.length - 1].index;
+        const idleCfg = this.config.visual.idleSlot;
+        const idle = idleCfg == null ? null : (this._lastShown ?? idleCfg);
         if (layout.length === 0 && idle != null && slots[idle]) {
             layout = [{
                 index: idle,
