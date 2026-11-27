@@ -29,6 +29,16 @@ test('recorder skips unchanged pose arrays and round-trips through replay', asyn
     assert.equal(v.latestPoses[0].keypoints[0].x, 400 + 60);
 });
 
+test('replay loops: after the last frame it starts over', async () => {
+    let now = 0;
+    const frames = [{ t: 0, poses: [pose({ cx: 100 })] }, { t: 1, poses: [pose({ cx: 500 })] }];
+    const v = new ReplayVision({ cameraSize: { width: 640, height: 480 }, frames }, () => now);
+    await v.init(); v.start();
+    now = 1.02; assert.equal(v.latestPoses, frames[1].poses);
+    now = 1.06; assert.equal(v.latestPoses, frames[0].poses); // duration = 1.05 s
+    assert.deepEqual(new ReplayVision({ frames: [] }, () => 0).latestPoses, []);
+});
+
 test('recordings keep only name/x/y/score, rounded', () => {
     const r = new PoseRecorder();
     r.start(0, { width: 640, height: 480 });
