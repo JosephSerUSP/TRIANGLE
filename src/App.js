@@ -96,8 +96,10 @@ export class App {
         const a = document.createElement('a');
         a.href = URL.createObjectURL(blob);
         a.download = `triangle-${new Date().toISOString().replace(/[:.]/g, '-')}.json`;
+        document.body.appendChild(a); // Firefox ignores clicks on detached links
         a.click();
-        URL.revokeObjectURL(a.href);
+        a.remove();
+        setTimeout(() => URL.revokeObjectURL(a.href), 1000);
     }
 
     async _init() {
@@ -108,8 +110,10 @@ export class App {
             console.error('Vision init failed:', err);
             const el = document.getElementById('camera-msg');
             if (el) {
-                el.textContent = `NO CAMERA (${err.name || err.message}). Autopilot only. `
-                    + 'Allow the camera and reload, or try ?replay=recordings/synthetic-duo.json';
+                el.textContent = this.vision instanceof ReplayVision
+                    ? `REPLAY FAILED (${err.message}). Check the ?replay= path. Autopilot only.`
+                    : `NO CAMERA (${err.name || err.message}). Autopilot only. `
+                        + 'Allow the camera and reload, or try ?replay=recordings/synthetic-duo.json';
                 el.style.display = 'block';
             }
         }

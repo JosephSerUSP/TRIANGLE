@@ -89,9 +89,12 @@ export class ReplayVision {
     }
 
     async init() {
-        const rec = typeof this.source === 'string'
-            ? await (await fetch(this.source)).json()
-            : this.source;
+        let rec = this.source;
+        if (typeof rec === 'string') {
+            const res = await fetch(rec);
+            if (!res.ok) throw new Error(`${res.status} ${rec}`);
+            rec = await res.json();
+        }
         this._frames = rec.frames || [];
         this.cameraSize = rec.cameraSize || this.cameraSize;
         this._duration = this._frames.length ? this._frames[this._frames.length - 1].t + 0.05 : 0;
