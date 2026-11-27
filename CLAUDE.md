@@ -30,7 +30,11 @@ Webcam-driven audio-visual instrument, browser-only, zero build. GitHub: `Joseph
 - Tests: zero-dependency `node --test` on the pure modules; browser parts verified by hand.
 
 ## Next
-- Play-test the mapping modes with `docs/d1-mapping-modes.md`; choose the default (`CONFIG.defaults.mappingMode`).
-- Branches: inventory + suggested handling in `docs/branches.md` (2026-11-27). Deleting unmerged ones needs Jo's OK; the audio experiments there may feed D1.
-- Verified 2026-11-27 in the in-app browser via replay (render, layout, HUD, keys, audio unlock, all 4 mapping modes, human takeover, URL overrides, camera-denied notice). Live webcam + actual sound quality still need Jo.
-- PR: https://github.com/JosephSerUSP/TRIANGLE/pull/44 (branch `refactor/ontology`). Pushing from this machine: git's stored credential is `zerafidev` (no access); use `gh auth setup-git` or `git -c credential.helper= -c 'credential.helper=!gh auth git-credential' push`.
+1. **Jo:** play-test with a webcam and sound using `docs/d1-mapping-modes.md`, then choose the D1 default (`CONFIG.defaults.mappingMode`) and retire the other modes.
+2. **Jo:** review/merge https://github.com/JosephSerUSP/TRIANGLE/pull/44 (branch `refactor/ontology`, CI green, 37 tests).
+3. **Jo:** decide on unmerged branches (`docs/branches.md`): the "superseded" group is safe to delete; the audio group was mined for `sculpt`.
+4. Optional: register TRIANGLE in the Notion Agent Hub (not done; it is an outward change).
+
+## Status (2026-11-27)
+- Verified in the in-app browser via replay: render, layout, HUD, keys, audio unlock, all 4 mapping modes, human takeover, URL overrides, camera/replay error notices. Not verified: a live webcam, and how it actually sounds.
+- Pushing from this machine: git's stored credential is `zerafidev` (no access). Use `gh auth setup-git`, or `git -c credential.helper= -c 'credential.helper=!gh auth git-credential' push`.
