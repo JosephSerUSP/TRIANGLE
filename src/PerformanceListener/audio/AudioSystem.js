@@ -7,7 +7,7 @@ import { clamp } from '../../core/MathUtils.js';
 import { CHORD_PROGRESSION, CHORD_TONE } from './MusicTheory.js';
 import { PulseBass, StringPad, PluckSynth, ArpSynth, KickDrum } from './Instruments.js';
 import {
-    chordIndexForBar, stepChannel, createChannel, voiceControls, targetTempo
+    chordIndexForBar, stepChannel, createChannel, voiceControls, targetTempo, resyncNoteTime
 } from './Arrangement.js';
 
 const PRIMARY = { bass: PulseBass, ostinato: PluckSynth, arp: ArpSynth };
@@ -93,11 +93,7 @@ export class AudioSystem {
     _scheduler() {
         if (!this.isPlaying) return;
         const horizon = this.ctx.currentTime + this.scheduleAheadTime;
-        // Tab-resume guard: if we fell far behind, drop the backlog instead of bursting it.
-        const maxLag = this.cfg.maxCatchUpSteps * (15 / this.tempo);
-        if (this.ctx.currentTime - this.nextNoteTime > maxLag) {
-            this.nextNoteTime = this.ctx.currentTime + 0.05;
-        }
+        this.nextNoteTime = resyncNoteTime(this.nextNoteTime, this.ctx.currentTime, this.tempo, this.cfg.maxCatchUpSteps);
         while (this.nextNoteTime < horizon) {
             this._scheduleStep(this.step, this.nextNoteTime);
             this.nextNoteTime += 15 / this.tempo; // a 16th note

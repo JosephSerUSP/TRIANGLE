@@ -1,6 +1,6 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { chordIndexForBar, stepChannel, createChannel, voiceControls, targetTempo } from '../src/PerformanceListener/audio/Arrangement.js';
+import { chordIndexForBar, stepChannel, createChannel, voiceControls, targetTempo, resyncNoteTime } from '../src/PerformanceListener/audio/Arrangement.js';
 import { CHORD_PROGRESSION, CHORD_TONE } from '../src/PerformanceListener/audio/MusicTheory.js';
 import { CONFIG } from '../src/core/Config.js';
 import { createRestGesture } from '../src/core/Contracts.js';
@@ -42,4 +42,9 @@ test('mapping modes', () => {
     assert.equal(targetTempo(wide, CONFIG.audio, 'tempo'), CONFIG.audio.bpmMin);
     assert.equal(voiceControls(snap(0.5, 0.9), CONFIG.audio, 'canon').transpose, 0);
     assert.ok(voiceControls(snap(0.5, 0.9), CONFIG.audio, 'harmony').transpose > 0);
+});
+
+test('scheduler skips a long backlog but keeps small lag', () => {
+    assert.equal(resyncNoteTime(9.95, 10, 120, 4), 9.95);   // 1 step behind: keep
+    assert.equal(resyncNoteTime(2, 10, 120, 4), 10.05);     // tab was asleep: jump
 });

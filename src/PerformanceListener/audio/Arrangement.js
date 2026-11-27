@@ -64,3 +64,13 @@ export function targetTempo(controls, audioCfg, mode) {
     const w = active.reduce((s, c) => s + c.width, 0) / active.length;
     return lerp(audioCfg.bpmMax, audioCfg.bpmMin, w);
 }
+
+/**
+ * Tab-resume guard. If the scheduler fell more than `maxSteps` 16ths behind
+ * (e.g. a backgrounded tab throttled setTimeout), skip the backlog instead of
+ * firing it all at once. Returns the next note time to use.
+ */
+export function resyncNoteTime(nextNoteTime, now, tempo, maxSteps) {
+    const maxLag = maxSteps * (15 / tempo);
+    return now - nextNoteTime > maxLag ? now + 0.05 : nextNoteTime;
+}
