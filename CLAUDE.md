@@ -19,7 +19,7 @@ Webcam-driven audio-visual instrument, browser-only, zero build. GitHub: `Joseph
 
 ## Jo's decisions
 - **TRIANGLE is the canonical name** (the old "Perfume: Lattice Performer" name is retired).
-- **D1 gesture→audio contract is an open experiment**: three modes (`canon`, `tempo`, `harmony`) behind the M key. Pick a winner after playing with it, then delete the others.
+- **D1 gesture→audio contract is an open experiment**: four modes (`canon`, `tempo`, `harmony`, `sculpt`; `sculpt` reuses ideas from the Dec-2025 audio branches) behind the M key. Pick a winner after playing with it, then delete the others.
 - Tests: zero-dependency `node --test` on the pure modules; browser parts verified by hand.
 
 ## Next

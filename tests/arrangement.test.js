@@ -48,3 +48,17 @@ test('scheduler skips a long backlog but keeps small lag', () => {
     assert.equal(resyncNoteTime(9.95, 10, 120, 4), 9.95);   // 1 step behind: keep
     assert.equal(resyncNoteTime(2, 10, 120, 4), 10.05);     // tab was asleep: jump
 });
+
+test('sculpt: deterministic gates and roll-driven chord walk', async () => {
+    const { gate, tiltOffset } = await import('../src/PerformanceListener/audio/Arrangement.js');
+    const a = Array.from({ length: 16 }, (_, b) => gate(0.5, b, 5, 1, true));
+    const b = Array.from({ length: 16 }, (_, b) => gate(0.5, b, 5, 1, true));
+    assert.deepEqual(a, b);
+    assert.ok(a.some(Boolean) && !a.every(Boolean));
+    const s = snap(0.5, 0.5);
+    s.gesture.orientation.roll = Math.PI / 2;
+    const ctl = voiceControls(s, CONFIG.audio, 'sculpt');
+    assert.equal(tiltOffset(ctl), 2);
+    assert.equal(tiltOffset(voiceControls(s, CONFIG.audio, 'harmony')), 0);
+    assert.ok(ctl.transpose > 0);
+});

@@ -91,8 +91,12 @@ export const CONFIG = deepFreeze({
          *  tempo   - canon + average hand width of active slots drives tempo.
          *  harmony - tempo + each slot's hand height picks an interval that
          *            transposes its voice (README's original "noteRatio" idea).
+         *  sculpt  - harmony + hand roll walks the chord tones of ostinato/arp,
+         *            rhythm gates are deterministic (same gesture = same groove),
+         *            each slot's two voices spread ±0.3 in stereo. Ideas mined
+         *            from the Dec-2025 branches (see docs/branches.md).
          */
-        mappingModes: ['canon', 'tempo', 'harmony'],
+        mappingModes: ['canon', 'tempo', 'harmony', 'sculpt'],
         /** Semitone offsets chosen by hand height in `harmony` mode. */
         harmonyIntervals: [0, 4, 7, 11, 14, 19],
         mix: {

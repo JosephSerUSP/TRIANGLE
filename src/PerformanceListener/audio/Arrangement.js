@@ -36,7 +36,7 @@ export function createChannel() {
  * Gesture -> per-voice control values for one slot.
  * @param {import('../../core/Contracts.js').SlotSnapshot} slot
  * @param {Object} audioCfg CONFIG.audio
- * @param {string} mode  'canon' | 'tempo' | 'harmony'
+ * @param {string} mode  'canon' | 'tempo' | 'harmony' | 'sculpt'
  */
 export function voiceControls(slot, audioCfg, mode) {
     const t = slot.gesture.triangle;
@@ -47,13 +47,36 @@ export function voiceControls(slot, audioCfg, mode) {
         expression: height,
         pan: clamp(slot.gesture.orientation.yaw / (Math.PI / 2), -1, 1),
         transpose: 0,
-        width
+        width,
+        /** Hand roll mapped to 0..1 (0.5 = level hands). Used by `sculpt`. */
+        tilt: clamp(slot.gesture.orientation.roll / Math.PI + 0.5, 0, 1),
+        deterministic: mode === 'sculpt'
     };
-    if (mode === 'harmony' && t.visible) {
+    if ((mode === 'harmony' || mode === 'sculpt') && t.visible) {
         const iv = audioCfg.harmonyIntervals;
         ctl.transpose = iv[Math.min(iv.length - 1, Math.floor(height * iv.length))];
     }
     return ctl;
+}
+
+/**
+ * Should a probabilistic voice play on this step? `sculpt` uses a fixed hash
+ * per (bar % 4, beat, slot), so the same gesture always yields the same rhythm
+ * (idea from the audio-refactor-deterministic branches); other modes use `rand`.
+ */
+export function gate(density, beat, bar, slotId, deterministic, rand = Math.random) {
+    if (!deterministic) return rand() < density;
+    const x = Math.sin((bar % 4) * 78.233 + beat * 12.9898 + slotId * 37.719) * 43758.5453;
+    return x - Math.floor(x) < density;
+}
+
+/**
+ * Chord-tone offset chosen by hand roll in `sculpt` (idea from the Hamauzu
+ * branches): level hands = 0, tilt either way walks up/down the chord.
+ */
+export function tiltOffset(ctl) {
+    if (!ctl.deterministic) return 0;
+    return Math.round((ctl.tilt - 0.5) * 4); // -2..+2 chord tones
 }
 
 /** Target tempo for the ensemble. Wide arms = slow (README's original intent). */

@@ -7,7 +7,7 @@ import { clamp } from '../../core/MathUtils.js';
 import { CHORD_PROGRESSION, CHORD_TONE } from './MusicTheory.js';
 import { PulseBass, StringPad, PluckSynth, ArpSynth, KickDrum } from './Instruments.js';
 import {
-    chordIndexForBar, stepChannel, createChannel, voiceControls, targetTempo, resyncNoteTime
+    chordIndexForBar, stepChannel, createChannel, voiceControls, targetTempo, resyncNoteTime, gate, tiltOffset
 } from './Arrangement.js';
 
 const PRIMARY = { bass: PulseBass, ostinato: PluckSynth, arp: ArpSynth };
@@ -119,7 +119,9 @@ export class AudioSystem {
             const timbre = ch.status === 'OUTRO' ? ctl.expression * 0.5 : ctl.expression;
             v.primary.setPan(ctl.pan, time);
             v.primary.modulate({ timbre }, time);
-            v.pad.setPan(ctl.pan * 0.5, time);
+            // sculpt spreads the pair ±0.3 around the body (voice-leading branch idea).
+            v.pad.setPan(ctl.deterministic ? clamp(ctl.pan - 0.3, -1, 1) : ctl.pan * 0.5, time);
+            if (ctl.deterministic) v.primary.setPan(clamp(ctl.pan + 0.3, -1, 1), time);
             v.pad.modulate({ timbre }, time);
             if (ch.status === 'SILENT') return;
             const tr = ctl.transpose;
@@ -145,8 +147,9 @@ export class AudioSystem {
                 }
             } else if (v.role === 'ostinato') {
                 const density = { INTRO: 0.2, OUTRO: 0.1, MAIN: 0.2 + ctl.expression * 0.8 }[ch.status];
-                if (Math.random() < density) {
-                    const n = chord.notes[this.ostinatoPattern[beat] % chord.notes.length];
+                if (gate(density, beat, this.bar, i, ctl.deterministic)) {
+                    const len = chord.notes.length;
+                    const n = chord.notes[(((this.ostinatoPattern[beat] + tiltOffset(ctl)) % len) + len) % len];
                     v.primary.playNote(this._freq(n + tr, 4), time, 0.1, 0.3 + timbre * 0.6);
                 }
                 if (beat === 0 && this.bar % 2 === 0) {
@@ -154,8 +157,9 @@ export class AudioSystem {
                 }
             } else {
                 const density = { INTRO: 0.1, OUTRO: 0.05, MAIN: 0.1 + ctl.expression * 0.9 }[ch.status];
-                if (Math.random() < density) {
-                    const n = chord.notes[beat % chord.notes.length];
+                if (gate(density, beat, this.bar, i, ctl.deterministic)) {
+                    const len = chord.notes.length;
+                    const n = chord.notes[(((beat + tiltOffset(ctl)) % len) + len) % len];
                     const vel = (0.3 + timbre * 0.5) * (0.8 + Math.random() * 0.4);
                     v.primary.playNote(this._freq(n + tr, 4), time, 0.1, vel);
                 }
