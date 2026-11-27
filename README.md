@@ -34,15 +34,15 @@ Allow the camera, then click or press any key to start the sound.
 | Mode | What the gesture drives |
 |---|---|
 | `canon` | Fixed progression at 120 BPM; hand height = expression only |
-| `tempo` | `canon` + average hand span of active slots sets tempo (wide = slow, 80–140 BPM) |
+| `tempo` | `canon` + average hand span sets tempo (wide = slow, 80–140 BPM); humans conduct, autopilot only when nobody is there |
 | `harmony` | `tempo` + each slot's hand height lifts its voice by whole chord tones (always in the current chord) |
 | `sculpt` | `harmony` + hand roll walks the chord tones, deterministic rhythm (same gesture = same groove), wider stereo per slot |
 
-URL options: `?mode=canon|tempo|harmony|sculpt`, `?autopilot=0|1`, `?view=0|1|2`, `?seed=<n>` (repeatable autopilot personalities: same noise offsets and sleep/wake rolls) (see `docs/d1-mapping-modes.md`).
+URL options: `?mode=canon|tempo|harmony|sculpt`, `?autopilot=0|1`, `?view=0|1|2`, `?seed=<n>` for repeatable autopilot personalities (same noise offsets and sleep/wake rolls). See `docs/d1-mapping-modes.md` for ready-made combinations.
 
 ## No camera? Replay
 
-Open `http://localhost:8000/?replay=recordings/synthetic-duo.json` to drive the full pipeline from a recording. Press A to turn autopilot off so all slots follow the recording. Regenerate the synthetic file with `node tools/make-synthetic-recording.js`, or record your own with R.
+Open `http://localhost:8000/?replay=recordings/synthetic-duo.json` to drive the full pipeline from a recording. Press A to turn autopilot off so all slots follow the recording. `recordings/solo-sweep.json` moves one control at a time (height, tilt, span). Regenerate the synthetic file with `node tools/make-synthetic-recording.js`, or record your own with R.
 
 ## Test
 
@@ -50,7 +50,7 @@ Open `http://localhost:8000/?replay=recordings/synthetic-duo.json` to drive the 
 node --test "tests/*.test.js"
 ```
 
-Pure-JS unit tests (Node 21+ for the glob; no installs) cover pose extraction, slot smoothing/debounce, layout, the arrangement logic and the manager's frame contract.
+Pure-JS unit tests (Node 21+ for the glob; no installs) cover pose extraction, slot smoothing/debounce, layout, the arrangement logic, record/replay and the manager's frame contract; `tests/architecture.test.js` guards the module boundaries. CI runs them on every PR.
 
 ## Architecture
 
