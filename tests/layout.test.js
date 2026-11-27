@@ -20,6 +20,14 @@ test('divider leans with roll, clamps, and straightens as a neighbour fades', ()
     assert.equal(lean([slot(1, 5), slot(1)]), lean([slot(1, CONFIG.layout.maxDividerAngle), slot(1)])); // clamped
 });
 
+test('a single present slot fills the screen with straight edges', () => {
+    const out = new DynamicLayout(CONFIG.layout).calculate(800, 600, [slot(0), slot(1, 0.4), slot(0)]);
+    assert.equal(out.length, 1);
+    assert.equal(out[0].index, 1);
+    assert.deepEqual(out[0].rect, { x: 0, y: 0, width: 800, height: 600 });
+    assert.deepEqual(out[0].corners, { tl: 0, bl: 0, tr: 800, br: 800 });
+});
+
 test('rects stay on screen; outer edges are the screen edges', () => {
     const out = new DynamicLayout(CONFIG.layout).calculate(1200, 600, [slot(1, 0.4), slot(1, -2), slot(0.5)]);
     assert.equal(out.length, 3);
