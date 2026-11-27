@@ -30,6 +30,18 @@ export class PerformanceListener {
         this.audio.mappingMode = mode;
     }
 
+    /** Read-only snapshot for the HUD (null until audio is unlocked). */
+    getStatus() {
+        const a = this.audio;
+        if (!a.isReady) return null;
+        return {
+            tempo: a.tempo,
+            bar: a.bar,
+            channels: a.channels.map(c => c.status),
+            transposes: a.controls.map(c => (c ? c.transpose : 0))
+        };
+    }
+
     /** @param {import('../core/Contracts.js').PerformanceFrame} frame */
     update(frame) {
         if (this.audio.isReady) this.audio.update(frame);

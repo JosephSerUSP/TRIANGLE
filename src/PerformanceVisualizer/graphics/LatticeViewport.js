@@ -200,19 +200,6 @@ export class LatticeViewport {
 
         const progress = { value: 0 };
 
-        // Handle case where TWEEN might not be fully initialized or compatible
-        if (!TWEEN || !TWEEN.Tween) {
-            for (let v = 0; v < vertexCount; v++) {
-                posAttr.setXYZ(v,
-                    finalPos[v * 3],
-                    finalPos[v * 3 + 1],
-                    finalPos[v * 3 + 2]
-                );
-            }
-            posAttr.needsUpdate = true;
-            return;
-        }
-
         new TWEEN.Tween(progress)
             .to({ value: 1 }, duration)
             .easing(TWEEN.Easing.Exponential.Out)

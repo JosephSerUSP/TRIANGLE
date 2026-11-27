@@ -54,6 +54,7 @@ export class PerformanceVisualizer {
             viewMode: this.viewMode,
             audioLocked: this.audioLocked,
             mappingMode: extra.mappingMode,
+            audio: extra.audio || null,
             recording: !!extra.recording,
             replay: !!extra.replay
         });

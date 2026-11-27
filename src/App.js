@@ -102,6 +102,7 @@ export class App {
         this.recorder.capture(nowMs / 1000, this.vision.latestPoses);
         this.visualizer.update(frame, {
             mappingMode: this.listener.mappingMode,
+            audio: this.listener.getStatus(),
             recording: this.recorder.recording,
             replay: this.vision instanceof ReplayVision
         });

@@ -51,10 +51,13 @@ export class DebugOverlay {
             ? `TARGET ACQUIRED  (${physical.join(', ')})`
             : 'SCANNING SECTOR...';
 
-        let text = `Autopilot: ${frame.autopilotEnabled ? 'ON' : 'OFF'}   Mapping: ${hud.mappingMode}\n`;
-        frame.slots.forEach(s => {
+        const a = hud.audio;
+        let text = `Autopilot: ${frame.autopilotEnabled ? 'ON' : 'OFF'}   Mapping: ${hud.mappingMode}`;
+        text += a ? `   ${a.tempo.toFixed(1)} BPM  bar ${a.bar}\n` : '   audio locked\n';
+        frame.slots.forEach((s, i) => {
             const t = s.gesture.triangle;
-            text += `P${s.id} ${s.role.padEnd(8)} ${s.binding.padEnd(8)} ${s.active ? 'ON ' : 'off'} pres ${s.presence.toFixed(2)}\n`;
+            const ch = a ? `  ${a.channels[i] || ''}${a.transposes[i] ? ' +' + a.transposes[i] : ''}` : '';
+            text += `P${s.id} ${s.role.padEnd(8)} ${s.binding.padEnd(8)} ${s.active ? 'ON ' : 'off'} pres ${s.presence.toFixed(2)}${ch}\n`;
             text += `  depth: ${s.gesture.depth.toFixed(2)}  triA: ${t.area.toFixed(3)}  W: ${t.width.toFixed(2)}  H: ${t.height.toFixed(2)}\n`;
         });
         this.metricsEl.innerText = text;
