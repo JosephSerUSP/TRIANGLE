@@ -71,7 +71,9 @@ export const CONFIG = deepFreeze({
         gridDivisions: 20,
         phaseScale: 500.0,
         triangleScale: 320,
-        triangleZ: 500
+        triangleZ: 500,
+        /** Slot whose lattice is shown, dimmed, when nobody is present (null = black). */
+        idleSlot: 0
     },
 
     audio: {

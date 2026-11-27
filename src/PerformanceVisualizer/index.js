@@ -62,7 +62,16 @@ export class PerformanceVisualizer {
     _renderViewports(slots) {
         const { width, height } = this;
         this.renderer.clear();
-        const layout = this.layoutSystem.calculate(width, height, slots);
+        let layout = this.layoutSystem.calculate(width, height, slots);
+        // Idle stage: nobody present -> a dim full-screen lattice instead of black.
+        const idle = this.config.visual.idleSlot;
+        if (layout.length === 0 && idle != null && slots[idle]) {
+            layout = [{
+                index: idle,
+                rect: { x: 0, y: 0, width, height },
+                corners: { tl: 0, bl: 0, tr: width, br: width }
+            }];
+        }
         layout.forEach(({ index, rect, corners }) => {
             this.renderer.clearStencil();
             this.renderer.setScissor(rect.x, rect.y, rect.width, rect.height);
