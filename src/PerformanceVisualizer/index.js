@@ -45,7 +45,7 @@ export class PerformanceVisualizer {
 
     /**
      * @param {import('../core/Contracts.js').PerformanceFrame} frame
-     * @param {{mappingMode:string}} extra  HUD-only info
+     * @param {{mappingMode:string, recording:boolean, replay:boolean}} extra  HUD-only info
      */
     update(frame, extra = {}) {
         TWEEN.update();
@@ -53,7 +53,9 @@ export class PerformanceVisualizer {
         this.debug.draw(frame, {
             viewMode: this.viewMode,
             audioLocked: this.audioLocked,
-            mappingMode: extra.mappingMode
+            mappingMode: extra.mappingMode,
+            recording: !!extra.recording,
+            replay: !!extra.replay
         });
     }
 

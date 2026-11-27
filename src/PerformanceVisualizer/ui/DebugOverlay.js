@@ -27,12 +27,19 @@ export class DebugOverlay {
 
     /**
      * @param {import('../../core/Contracts.js').PerformanceFrame} frame
-     * @param {{viewMode:number, audioLocked:boolean, mappingMode:string}} hud
+     * @param {{viewMode:number, audioLocked:boolean, mappingMode:string, recording:boolean, replay:boolean}} hud
      */
     draw(frame, hud) {
         if (this.hintEl) this.hintEl.style.display = hud.audioLocked ? 'block' : 'none';
         if (!this.ctx) return;
         this.ctx.clearRect(0, 0, this.canvas.width, this.canvas.height);
+        // Recording / replay badges are shown in every view mode.
+        const badge = hud.recording ? '● REC' : hud.replay ? '▶ REPLAY' : '';
+        if (badge) {
+            this.ctx.font = '12px monospace';
+            this.ctx.fillStyle = hud.recording ? '#ff5566' : '#88eeee';
+            this.ctx.fillText(badge, this.canvas.width - 90, 20);
+        }
 
         const show = hud.viewMode === 2;
         if (this.statusEl) this.statusEl.style.display = show ? 'block' : 'none';
