@@ -28,6 +28,8 @@ Allow the camera, then click or press any key to start the sound.
 - **Vertical position** → pitch
 - **Distance to camera** → depth (travel through the lattice)
 - **Hands + neck** form the triangle: hand angle → roll (view and divider angle), hand height → expression (filter, density)
+- **Hand span** → tempo (`tempo`/`harmony`/`sculpt`); **hand height** → chord-tone lift (`harmony`/`sculpt`); **hand tilt** → chord walk (`sculpt`)
+- **Stepping in** rebuilds your lattice line by line; extra people take over autopilot slots
 
 ### Audio mapping modes (experimental, press M)
 
