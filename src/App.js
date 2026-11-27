@@ -109,16 +109,33 @@ export class App {
         requestAnimationFrame(t => this._loop(t));
     }
 
+    /** Once a second: render FPS and pose inferences per second (camera only). */
+    _updateRates(nowMs) {
+        this._frames = (this._frames || 0) + 1;
+        if (this._rateT === undefined) { this._rateT = nowMs; this._inf0 = this.vision.inferenceCount || 0; }
+        const span = nowMs - this._rateT;
+        if (span >= 1000) {
+            const inf = this.vision.inferenceCount;
+            this.rates = {
+                fps: (this._frames * 1000) / span,
+                pps: inf === undefined ? null : ((inf - this._inf0) * 1000) / span
+            };
+            this._frames = 0; this._rateT = nowMs; this._inf0 = inf || 0;
+        }
+    }
+
     /** Render loop: never awaits inference (VisionSystem runs on its own). */
     _loop(nowMs) {
         const dt = this._lastMs === null ? 1 / 60 : Math.min(0.1, (nowMs - this._lastMs) / 1000);
         this._lastMs = nowMs;
+        this._updateRates(nowMs);
 
         const frame = this.manager.tick(nowMs / 1000, dt);
         this.recorder.capture(nowMs / 1000, this.vision.latestPoses);
         this.visualizer.update(frame, {
             mappingMode: this.listener.mappingMode,
             audio: this.listener.getStatus(),
+            rates: this.rates || null,
             recording: this.recorder.recording,
             replay: this.vision instanceof ReplayVision
         });

@@ -18,6 +18,8 @@ export class VisionSystem {
         this.cameraSize = { width: visionConfig.idealWidth, height: visionConfig.idealHeight };
         /** Latest RawObservation: MoveNet poses. */
         this.latestPoses = [];
+        /** Completed inferences, for the HUD's poses-per-second readout. */
+        this.inferenceCount = 0;
     }
 
     async init() {
@@ -70,6 +72,7 @@ export class VisionSystem {
             if (!this.running) return;
             try {
                 this.latestPoses = await this.detector.estimatePoses(this.video);
+                this.inferenceCount++;
             } catch {
                 this.latestPoses = [];
             }

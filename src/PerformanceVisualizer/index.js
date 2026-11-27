@@ -60,6 +60,7 @@ export class PerformanceVisualizer {
             audioLocked: this.audioLocked,
             mappingMode: extra.mappingMode,
             audio: extra.audio || null,
+            rates: extra.rates || null,
             recording: !!extra.recording,
             replay: !!extra.replay,
             toast: this.toast && performance.now() / 1000 < this.toast.until ? this.toast.text : null

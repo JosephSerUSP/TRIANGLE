@@ -62,6 +62,8 @@ export class DebugOverlay {
         const a = hud.audio;
         let text = `Autopilot: ${frame.autopilotEnabled ? 'ON' : 'OFF'}   Mapping: ${hud.mappingMode}`;
         text += a ? `   ${a.tempo.toFixed(1)} BPM  bar ${a.bar}\n` : '   audio locked\n';
+        const r = hud.rates;
+        if (r) text += `render ${r.fps.toFixed(0)} fps${r.pps === null ? '' : `   poses ${r.pps.toFixed(1)}/s`}\n`;
         frame.slots.forEach((s, i) => {
             const t = s.gesture.triangle;
             const ch = a ? `  ${a.channels[i] || ''}${a.transposes[i] ? ' +' + a.transposes[i] : ''}` : '';
