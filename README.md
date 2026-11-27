@@ -37,6 +37,8 @@ Allow the camera, then click or press any key to start the sound.
 | `harmony` | `tempo` + each slot's hand height transposes its voice by a chord-friendly interval |
 | `sculpt` | `harmony` + hand roll walks the chord tones, deterministic rhythm (same gesture = same groove), wider stereo per slot |
 
+URL options: `?mode=canon|tempo|harmony|sculpt`, `?autopilot=0|1`, `?view=0|1|2` (see `docs/d1-mapping-modes.md`).
+
 ## No camera? Replay
 
 Open `http://localhost:8000/?replay=recordings/synthetic-duo.json` to drive the full pipeline from a recording. Press A to turn autopilot off so all slots follow the recording. Regenerate the synthetic file with `node tools/make-synthetic-recording.js`, or record your own with R.

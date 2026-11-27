@@ -6,6 +6,7 @@
  * Keys: D = cycle view mode, A = toggle autopilot, M = cycle audio mapping mode,
  *       R = start/stop pose recording (downloads JSON).
  * URL:  ?replay=recordings/<file>.json replays poses instead of the camera.
+ *       ?mode=<canon|tempo|harmony|sculpt>  ?autopilot=0|1  ?view=0|1|2  override startup defaults.
  */
 import { CONFIG } from './core/Config.js';
 import { PerformanceManager } from './PerformanceManager/index.js';
@@ -18,7 +19,8 @@ export class App {
     /** @param {Document} doc */
     constructor(doc = document) {
         this.config = CONFIG;
-        const replay = new URLSearchParams(location.search).get('replay');
+        const params = new URLSearchParams(location.search);
+        const replay = params.get('replay');
         this.vision = replay
             ? new ReplayVision(replay)
             : new VisionSystem(doc.getElementById('video'), CONFIG.vision);
@@ -33,9 +35,13 @@ export class App {
         });
         this.listener = new PerformanceListener(CONFIG);
 
-        this.viewMode = CONFIG.defaults.viewMode;
+        const d = CONFIG.defaults;
+        const view = Number(params.get('view'));
+        this.viewMode = [0, 1, 2].includes(view) && params.has('view') ? view : d.viewMode;
         this.visualizer.setViewMode(this.viewMode);
-        this.listener.setMappingMode(CONFIG.defaults.mappingMode);
+        const mode = params.get('mode');
+        this.listener.setMappingMode(CONFIG.audio.mappingModes.includes(mode) ? mode : d.mappingMode);
+        if (params.has('autopilot')) this.manager.setAutopilot(params.get('autopilot') !== '0');
 
         this._bindInput();
         this._lastMs = null;
