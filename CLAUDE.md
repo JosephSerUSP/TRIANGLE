@@ -3,10 +3,10 @@
 Webcam-driven audio-visual instrument, browser-only, zero build. GitHub: `JosephSerUSP/TRIANGLE`. See README.md for controls and architecture.
 
 ## Run / verify
-- Run: `python -m http.server 8000`, open http://localhost:8000 (camera needs localhost).
+- Run: `python tools/serve.py` (no-cache static server), open http://localhost:8000 (camera needs localhost).
 - Tests: `node --test "tests/*.test.js"` (no npm installs; `package.json` exists only for `"type": "module"`).
 - No camera (agents: the in-app browser blocks webcams): open `/?replay=recordings/synthetic-duo.json`, press A (autopilot off), D twice (debug HUD). HUD shows BPM, bar, channel lifecycle and transposes.
-- Browser caches ES modules hard: after edits, fetch changed files with `{cache:'reload'}` before reloading.
+- `tools/serve.py` disables caching; with plain `http.server`, edited ES modules can stay stale after reload.
 - Manual check: camera on → slot 0 lights up; D cycles views (skeleton in mode 2); A toggles autopilot; click → sound; M cycles mapping modes (shown in the debug HUD).
 
 ## Ontology (keep these boundaries)

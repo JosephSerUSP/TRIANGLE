@@ -7,7 +7,7 @@ A browser-only audio-visual instrument. A webcam (MoveNet) reads up to three bod
 No build and no npm dependencies. Serve the folder (the camera needs `localhost` or https):
 
 ```bash
-python -m http.server 8000   # then open http://localhost:8000
+python tools/serve.py   # no-cache dev server; then open http://localhost:8000
 ```
 
 Allow the camera, then click or press any key to start the sound.

@@ -8,7 +8,7 @@
  */
 import { writeFileSync, mkdirSync } from 'node:fs';
 
-const W = 640, H = 480, FPS = 30, SECONDS = 24;
+const W = 640, H = 480, FPS = 15, SECONDS = 24; // 15 fps ~ MoveNet rate on modest machines
 
 function body(cx, t, phase) {
     const sway = Math.sin(t * 0.7 + phase) * 30;
@@ -35,7 +35,7 @@ for (let i = 0; i < SECONDS * FPS; i++) {
     // Second performer is present for the middle 12 seconds only.
     if (t > 6 && t < 18) poses.push(body(450, t, 2.1));
     // A brief dropout to exercise the presence debounce.
-    if (i % 150 === 75) poses.length = 0;
+    if (i % 75 === 37) poses.length = 0;
     frames.push({ t: +t.toFixed(3), poses });
 }
 
