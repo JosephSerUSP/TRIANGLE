@@ -3,6 +3,7 @@
  * Audio starts only via an explicit unlock() from App (browser gesture rule).
  */
 import { AudioSystem } from './audio/AudioSystem.js';
+import { tiltOffset } from './audio/Arrangement.js';
 
 export class PerformanceListener {
     /** @param {Object} config CONFIG */
@@ -38,7 +39,8 @@ export class PerformanceListener {
             tempo: a.tempo,
             bar: a.bar,
             channels: a.channels.map(c => c.status),
-            transposes: a.controls.map(c => (c ? c.transpose : 0))
+            transposes: a.controls.map(c => (c ? c.transpose : 0)),
+            walks: a.controls.map(c => (c ? tiltOffset(c) : 0))
         };
     }
 

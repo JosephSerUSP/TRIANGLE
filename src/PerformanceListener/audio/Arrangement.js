@@ -81,6 +81,16 @@ export function tiltOffset(ctl) {
 }
 
 /**
+ * Bass root under a `sculpt` walk: tilt either way swaps the root for the
+ * chord's 3rd (|walk| = 1) or 5th (|walk| = 2), an octave down, so a solo
+ * performer (always the bass slot) hears their tilt. Returns null for no walk.
+ */
+export function bassWalkInterval(chord, walk) {
+    const tone = Math.min(2, Math.abs(walk));
+    return tone === 0 ? null : chord.notes[tone] - 12;
+}
+
+/**
  * 0..1 "arc" of a channel: grows over `rampSec` since it entered (idea from the
  * audio-evolution-kick branch). `sculpt` scales density by 0.5 + 0.5 * arc,
  * so a performer's part builds up the longer they stay.

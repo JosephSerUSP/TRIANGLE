@@ -80,3 +80,12 @@ test('humans conduct the tempo when present', () => {
     const botsOnly = [voiceControls(bot, CONFIG.audio, 'tempo')];
     assert.equal(targetTempo(botsOnly, CONFIG.audio, 'tempo'), CONFIG.audio.bpmMax);
 });
+
+test('sculpt bass walk picks 3rd / 5th an octave down, never below D1', async () => {
+    const { bassWalkInterval } = await import('../src/PerformanceListener/audio/Arrangement.js');
+    const D = CHORD_PROGRESSION[0];
+    assert.equal(bassWalkInterval(D, 0), null);
+    assert.equal(bassWalkInterval(D, 1), D.notes[CHORD_TONE.third] - 12);
+    assert.equal(bassWalkInterval(D, -2), D.notes[CHORD_TONE.fifth] - 12);
+    for (const c of CHORD_PROGRESSION) for (const w of [-2, -1, 1, 2]) assert.ok(bassWalkInterval(c, w) >= -12);
+});
