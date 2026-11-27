@@ -48,3 +48,14 @@ test('takeover survives a one-frame dropout, then hands back after the grace per
 test('config is immutable', () => {
     assert.throws(() => { CONFIG.defaults.viewMode = 2; });
 });
+
+test('seeded autopilot is reproducible', async () => {
+    const { seededRandom } = await import('../src/core/MathUtils.js');
+    const run = () => {
+        const m = new PerformanceManager(CONFIG, fakeVision([]), { random: seededRandom(42) });
+        let f;
+        for (let i = 0; i < 120; i++) f = m.tick(i / 60, 1 / 60);
+        return JSON.stringify(f.slots.map(s => s.gesture));
+    };
+    assert.equal(run(), run());
+});

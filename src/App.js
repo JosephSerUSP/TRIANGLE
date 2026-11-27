@@ -6,9 +6,11 @@
  * Keys: D = cycle view mode, A = toggle autopilot, M = cycle audio mapping mode,
  *       R = start/stop pose recording (downloads JSON), H = show key help.
  * URL:  ?replay=recordings/<file>.json replays poses instead of the camera.
- *       ?mode=<canon|tempo|harmony|sculpt>  ?autopilot=0|1  ?view=0|1|2  override startup defaults.
+ *       ?mode=<canon|tempo|harmony|sculpt>  ?autopilot=0|1  ?view=0|1|2  override startup defaults;
+ *       ?seed=<n> makes autopilot reproducible.
  */
 import { CONFIG } from './core/Config.js';
+import { seededRandom } from './core/MathUtils.js';
 import { PerformanceManager } from './PerformanceManager/index.js';
 import { VisionSystem } from './PerformanceManager/systems/VisionSystem.js';
 import { PoseRecorder, ReplayVision } from './PerformanceManager/systems/PoseRecording.js';
@@ -25,7 +27,10 @@ export class App {
             ? new ReplayVision(replay)
             : new VisionSystem(doc.getElementById('video'), CONFIG.vision);
         this.recorder = new PoseRecorder();
-        this.manager = new PerformanceManager(CONFIG, this.vision);
+        const seed = params.get('seed');
+        this.manager = new PerformanceManager(CONFIG, this.vision, {
+            random: seed !== null ? seededRandom(Number(seed) || 1) : Math.random
+        });
         this.visualizer = new PerformanceVisualizer(CONFIG, {
             container: doc.getElementById('canvas-container'),
             debugCanvas: doc.getElementById('debug-layer'),
@@ -120,7 +125,7 @@ export class App {
             const inf = this.vision.inferenceCount;
             this.rates = {
                 fps: (this._frames * 1000) / span,
-                pps: inf === undefined ? null : ((inf - this._inf0) * 1000) / span
+                pps: inf === undefined || !this.vision.running ? null : ((inf - this._inf0) * 1000) / span
             };
             this._frames = 0; this._rateT = nowMs; this._inf0 = inf || 0;
         }

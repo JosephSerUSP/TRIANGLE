@@ -30,7 +30,17 @@ export function expSmooth(current, target, rate, dt) {
     return current + (target - current) * (1 - Math.exp(-rate * dt));
 }
 
-/** Returns `v` if finite, otherwise `fallback`. */
-export function finiteOr(v, fallback) {
-    return Number.isFinite(v) ? v : fallback;
+/**
+ * Small seeded PRNG (mulberry32). Returns a () => [0,1) function, so systems
+ * that take a `random` argument (AutopilotSystem) can be made reproducible.
+ */
+export function seededRandom(seed) {
+    let a = (seed >>> 0) || 1;
+    return () => {
+        a = (a + 0x6D2B79F5) >>> 0;
+        let t = a;
+        t = Math.imul(t ^ (t >>> 15), t | 1);
+        t ^= t + Math.imul(t ^ (t >>> 7), t | 61);
+        return ((t ^ (t >>> 14)) >>> 0) / 4294967296;
+    };
 }

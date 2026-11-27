@@ -12,13 +12,14 @@ export class PerformanceManager {
      * @param {Object} config  CONFIG
      * @param {{latestPoses:Array, cameraSize:{width:number,height:number}}|null} vision
      *        anything exposing the latest poses (VisionSystem, or a fake in tests)
+     * @param {{random?: () => number}} [opts]  seeded PRNG for reproducible autopilot
      */
-    constructor(config, vision) {
+    constructor(config, vision, { random = Math.random } = {}) {
         this.config = config;
         this.vision = vision;
         this.slots = config.slots.map(def => new EnsembleSlot(def, config.smoothing));
         this.autopilotSlotIds = config.slots.filter(s => s.autopilot).map(s => s.id);
-        this.autopilot = new AutopilotSystem(this.autopilotSlotIds);
+        this.autopilot = new AutopilotSystem(this.autopilotSlotIds, random);
         this.autopilotEnabled = config.defaults.autopilotEnabled;
         this._humanCount = 0;
         this._humanCountSince = 0;

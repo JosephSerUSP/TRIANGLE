@@ -38,7 +38,7 @@ Allow the camera, then click or press any key to start the sound.
 | `harmony` | `tempo` + each slot's hand height transposes its voice by a chord-friendly interval |
 | `sculpt` | `harmony` + hand roll walks the chord tones, deterministic rhythm (same gesture = same groove), wider stereo per slot |
 
-URL options: `?mode=canon|tempo|harmony|sculpt`, `?autopilot=0|1`, `?view=0|1|2` (see `docs/d1-mapping-modes.md`).
+URL options: `?mode=canon|tempo|harmony|sculpt`, `?autopilot=0|1`, `?view=0|1|2`, `?seed=<n>` (repeatable autopilot personalities: same noise offsets and sleep/wake rolls) (see `docs/d1-mapping-modes.md`).
 
 ## No camera? Replay
 
