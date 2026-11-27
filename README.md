@@ -50,7 +50,7 @@ Open `http://localhost:8000/?replay=recordings/synthetic-duo.json` to drive the 
 node --test "tests/*.test.js"
 ```
 
-Pure-JS unit tests (Node 18+, no installs) cover pose extraction, slot smoothing/debounce, layout, the arrangement logic and the manager's frame contract.
+Pure-JS unit tests (Node 21+ for the glob; no installs) cover pose extraction, slot smoothing/debounce, layout, the arrangement logic and the manager's frame contract.
 
 ## Architecture
 
