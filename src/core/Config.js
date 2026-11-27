@@ -1,63 +1,111 @@
-// src/core/Config.js
-
 /**
- * Global configuration object for the application.
- * Controls camera settings, interaction limits, audio parameters, and visual properties.
- * @constant
- * @type {Object}
+ * @fileoverview Immutable default configuration for TRIANGLE, grouped by subsystem.
+ *
+ * Nothing in the app mutates this object (it is deep-frozen). Runtime state
+ * such as view mode, autopilot and the measured camera size lives in App.js /
+ * VisionSystem instead. Modules read it directly or receive slices of it.
  */
-export const CONFIG = {
-    /** Camera settings */
-    camera: { width: 640, height: 480 },
-    /** Whether to mirror the video input */
-    mirrored: true,
-    /** Smoothing factor for pose transitions */
-    smoothing: 0.1,
-    /** Smoothing factor for depth transitions */
-    depthSmoothing: 0.05,
-    /** Enable or disable debug mode */
-    debug: false,
-    /** Enable or disable Autopilot system */
-    enableAutopilot: true,
+
+function deepFreeze(o) {
+    Object.values(o).forEach(v => { if (v && typeof v === 'object') deepFreeze(v); });
+    return Object.freeze(o);
+}
+
+export const CONFIG = deepFreeze({
     /**
-     * View mode:
-     * 0: Lattice Only
-     * 1: Lattice + Triangle
-     * 2: Lattice + Triangle + Debug
+     * Stage slots. Slot count everywhere (manager, visualizer, listener) derives
+     * from this array. `role` picks the voice in PerformanceListener.
+     * `autopilot: true` means the slot is driven by AutopilotSystem while
+     * autopilot is enabled; otherwise it follows a camera pose.
      */
-    viewMode: 0,
-    /** Layout and transition settings */
-    layout: {
-        transitionSmoothing: 0.05,
-        flipOrder: true,
-        activeThreshold: 0.001
+    slots: [
+        { id: 0, role: 'bass',     colorHex: 0x88eeee, autopilot: false },
+        { id: 1, role: 'ostinato', colorHex: 0xff66ff, autopilot: true },
+        { id: 2, role: 'arp',      colorHex: 0xffdd55, autopilot: true }
+    ],
+
+    /** Startup defaults for App-owned runtime state. */
+    defaults: {
+        autopilotEnabled: true,
+        /** 0: lattice, 1: lattice + triangle, 2: lattice + triangle + debug */
+        viewMode: 0,
+        /** See audio.mappingModes. */
+        mappingMode: 'canon'
     },
-    /** Grid visual settings */
-    grid: {
-        size: 10000,
-        divisions: 20,
-        phaseScale: 500.0
+
+    vision: {
+        /** Requested camera size; the real size is reported by VisionSystem. */
+        idealWidth: 640,
+        idealHeight: 480,
+        /** Mirror webcam coordinates once, in PoseExtractor. */
+        mirrored: true,
+        minKeypointScore: 0.3,
+        minPoseScore: 0.25
     },
-    /** Interaction limits for rotation */
+
+    /** Exponential smoothing rates (1/s) and presence hysteresis. */
+    smoothing: {
+        orientationRate: 6.0,
+        depthRate: 3.0,
+        triangleRate: 8.0,
+        presenceRate: 3.0,
+        /** Seconds a slot keeps `active` after its source disappears. */
+        lossGraceSec: 0.5,
+        /** Seconds a source must be seen before a slot becomes `active`. */
+        acquireSec: 0.1
+    },
+
     interaction: {
         maxRoll: Math.PI / 2,
         maxPitch: Math.PI / 6,
         maxYaw: Math.PI / 2
     },
-    /** Audio synthesis parameters */
+
+    layout: {
+        activeThreshold: 0.001,
+        maxDividerAngle: 0.5
+    },
+
+    visual: {
+        gridSize: 10000,
+        gridDivisions: 20,
+        phaseScale: 500.0,
+        triangleScale: 320,
+        triangleZ: 500,
+        /** Lattice shown, dimmed, when nobody is present: the last one on screen,
+         *  or this slot at startup (null = black screen). */
+        idleSlot: 0
+    },
+
     audio: {
         rootFreq: 73.42, // D2
-        detune: 4,
-        filterMin: 100,
-        filterMax: 8000,
-        bpmMin: 40,
+        baseTempo: 120,
+        bpmMin: 80,
         bpmMax: 140,
-        lfoRateMin: 0.3,
-        lfoRateMax: 8.0,
-        /** Audio mix settings */
+        introSec: 8.0,
+        outroSec: 4.0,
+        /** `sculpt` only: seconds for a part to build from half to full density. */
+        evolutionSec: 30,
+        /** Max 16th notes the scheduler may queue in one pass (tab-resume guard). */
+        maxCatchUpSteps: 4,
+        /**
+         * D1 is an open experiment: press M to cycle.
+         *  canon   - fixed Shibuya-kei progression, 120 BPM; hand height = expression.
+         *  tempo   - canon + average hand width of active slots drives tempo.
+         *  harmony - tempo + each slot's hand height picks an interval that
+         *            lifts its voice by whole chord tones (README's original "noteRatio" idea, made consonant).
+         *  sculpt  - harmony + hand roll walks the chord tones of ostinato/arp,
+         *            rhythm gates are deterministic (same gesture = same groove),
+         *            each slot's two voices spread ±0.3 in stereo. Ideas mined
+         *            from the Dec-2025 branches (see docs/branches.md).
+         */
+        mappingModes: ['canon', 'tempo', 'harmony', 'sculpt'],
+        /** Semitone offsets chosen by hand height in `harmony` mode. */
+        harmonyIntervals: [0, 4, 7, 11, 14, 19],
         mix: {
             master: 0.8,
             reverb: 0.3,
+            padReverbSend: 0.6,
             kick: 1.0,
             bass: 0.6,
             ostinato: 0.8,
@@ -65,4 +113,4 @@ export const CONFIG = {
             pad: 0.2
         }
     }
-};
+});

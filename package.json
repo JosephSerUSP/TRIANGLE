@@ -1,0 +1,13 @@
+{
+  "_doc": "No build and no npm dependencies. This file exists only so Node treats src/*.js as ES modules for `node --test`. The app runs straight from index.html.",
+  "name": "triangle",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "test": "node --test \"tests/*.test.js\"",
+    "serve": "python tools/serve.py 8000"
+  },
+  "engines": {
+    "node": ">=21"
+  }
+}

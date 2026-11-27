@@ -1,51 +1,52 @@
-import { AudioSystem } from './audio/AudioSystem.js';
-
 /**
- * Manages the audio output of the performance.
- * Responsible for:
- * 1. Managing the AudioSystem.
- * 2. Initializing audio on user interaction.
- * 3. Updating the audio system based on performer state.
+ * @fileoverview PerformanceListener: pure sonic projection of PerformanceFrame.
+ * Audio starts only via an explicit unlock() from App (browser gesture rule).
  */
+import { AudioSystem } from './audio/AudioSystem.js';
+import { tiltOffset, harmonyStep } from './audio/Arrangement.js';
+
 export class PerformanceListener {
-    constructor() {
-        this.audio = new AudioSystem();
-        this._initAudioOnInteraction();
+    /** @param {Object} config CONFIG */
+    constructor(config) {
+        this.config = config;
+        this.audio = new AudioSystem(config.audio);
+        this.mappingMode = config.defaults.mappingMode;
+        this._unlocking = null;
     }
 
-    /**
-     * Updates the audio output.
-     * @param {object} performanceData - The performance data.
-     * @param {import('../PerformanceManager/state/Performer.js').Performer[]} performanceData.performers - An array of performer states.
-     */
-    update({ performers }) {
-        if (this.audio.isReady) {
-            this.audio.update(performers);
+    /** Idempotent; call from a user gesture. */
+    unlock() {
+        if (!this._unlocking) {
+            this._unlocking = (async () => {
+                await this.audio.init(this.config.slots.map(s => s.role));
+                this.audio.mappingMode = this.mappingMode;
+                this.audio.resume();
+            })();
         }
+        return this._unlocking;
     }
 
-    /**
-     * Initializes audio on the first user interaction (click, keypress, etc.).
-     * @private
-     */
-    _initAudioOnInteraction() {
-        let initialized = false;
-        const startAudio = async () => {
-            if (initialized) return;
-            initialized = true;
+    setMappingMode(mode) {
+        this.mappingMode = mode;
+        this.audio.mappingMode = mode;
+    }
 
-            // Initialize with a default number of voices (e.g., 3 performers)
-            // Ideally we would know this from the manager, but 3 is standard config.
-            await this.audio.init(3);
-            this.audio.resume();
-
-            window.removeEventListener('click', startAudio);
-            window.removeEventListener('keydown', startAudio);
-            window.removeEventListener('touchstart', startAudio);
+    /** Read-only snapshot for the HUD (null until audio is unlocked). */
+    getStatus() {
+        const a = this.audio;
+        if (!a.isReady) return null;
+        return {
+            tempo: a.tempo,
+            bar: a.bar,
+            channels: a.channels.map(c => c.status),
+            /** Chord tones each voice is lifted by hand height (harmony/sculpt). */
+            lifts: a.controls.map(c => (c ? harmonyStep(c, this.config.audio) : 0)),
+            walks: a.controls.map(c => (c ? tiltOffset(c) : 0))
         };
+    }
 
-        window.addEventListener('click', startAudio);
-        window.addEventListener('keydown', startAudio);
-        window.addEventListener('touchstart', startAudio);
+    /** @param {import('../core/Contracts.js').PerformanceFrame} frame */
+    update(frame) {
+        if (this.audio.isReady) this.audio.update(frame);
     }
 }

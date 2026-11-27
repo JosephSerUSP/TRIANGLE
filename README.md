@@ -1,75 +1,74 @@
-# Perfume: Lattice Performer
+# TRIANGLE
 
-An interactive audio-visual performance system running entirely in the browser. It combines computer vision (MoveNet) with 3D graphics (Three.js) and generative audio to create a unique musical instrument controlled by body movement.
+A browser-only audio-visual instrument. A webcam (MoveNet) reads up to three bodies; each becomes a slot with its own Three.js lattice viewport and its own voice in a generative Web Audio arrangement (Shibuya-kei progression DMaj9 – Bm9 – Em9 – A13). Autopilot fills empty slots with virtual performers.
 
-## Overview
+## Run
 
-**Perfume** tracks your body movements using your webcam and translates them into musical parameters and 3D visualisations.
+No build and no npm dependencies. Serve the folder (the camera needs `localhost` or https):
 
--   **Pose Detection**: Uses TensorFlow.js and MoveNet to track key body points (shoulders, wrists, hips).
--   **3D Visuals**: Renders a dynamic lattice structure and a triangular representation of the performer's pose using Three.js.
--   **Generative Audio**: Synthesizes audio in real-time based on pose metrics (arm span, height, rotation) using the Web Audio API.
--   **Autopilot**: Includes virtual performers that can play alongside you.
+```bash
+python tools/serve.py   # no-cache dev server; then open http://localhost:8000
+```
 
-## Getting Started
+Allow the camera, then click or press any key to start the sound.
 
-### Prerequisites
+## Controls
 
--   A modern web browser (Chrome, Firefox, Safari, Edge) with WebGL and Web Audio API support.
--   A webcam.
+| Key | Action |
+|---|---|
+| D | Cycle view: lattice → lattice + triangle → + debug HUD and skeleton |
+| A | Toggle autopilot (virtual performers fill slots 1–2 until a person steps in) |
+| M | Cycle the audio mapping mode (see below) |
+| R | Start/stop recording poses (downloads a JSON file) |
+| H | Show the key list again |
 
-### Installation
+## Body → output
 
-No complex installation is required as the project is self-contained in a single HTML file using CDN links for dependencies.
+- **Shoulder tilt** → yaw (view rotation, stereo pan)
+- **Vertical position** → pitch
+- **Distance to camera** → depth (travel through the lattice)
+- **Hands + neck** form the triangle: hand angle → roll (view and divider angle), hand height → expression (filter, density)
+- **Hand span** → tempo (`tempo`/`harmony`/`sculpt`); **hand height** → chord-tone lift (`harmony`/`sculpt`); **hand tilt** → chord walk (`sculpt`)
+- **Stepping in** rebuilds your lattice line by line; extra people take over autopilot slots
 
-1.  Clone the repository:
-    ```bash
-    git clone https://github.com/your-username/perfume-lattice-performer.git
-    ```
-2.  Navigate to the project directory:
-    ```bash
-    cd perfume-lattice-performer
-    ```
+### Audio mapping modes (experimental, press M)
 
-### Usage
+| Mode | What the gesture drives |
+|---|---|
+| `canon` | Fixed progression at 120 BPM; hand height = expression only |
+| `tempo` | `canon` + average hand span sets tempo (wide = slow, 80–140 BPM); humans conduct, autopilot only when nobody is there |
+| `harmony` | `tempo` + each slot's hand height lifts its voice by whole chord tones (always in the current chord) |
+| `sculpt` | `harmony` + hand roll walks the chord tones, deterministic rhythm (same gesture = same groove), wider stereo per slot |
 
-1.  Open `index.html` in your web browser. You can do this by double-clicking the file or serving it via a local web server (recommended for camera permissions).
-    -   *Using Python:* `python3 -m http.server` then go to `http://localhost:8000`
-    -   *Using Node:* `npx serve`
-2.  **Grant Camera Access**: The browser will ask for permission to use your camera. Allow it to enable pose tracking.
-3.  **Engage System**: Click the "Click to Engage System" overlay to initialize the audio engine.
-4.  **Perform**:
-    -   Stand back so the camera sees your upper body (hips to head).
-    -   **Tilt your shoulders** (Yaw) to rotate the view.
-    -   **Move vertically** (Pitch) to look up/down.
-    -   **Move closer/further** (Depth) to move through the lattice.
-    -   **Raise your hands** to form a triangle.
-        -   **Width** of hands controls BPM/Tempo.
-        -   **Height** of hands controls musical intervals/harmony.
-        -   **Rotation** of hands controls the roll of the view.
+URL options: `?mode=canon|tempo|harmony|sculpt`, `?autopilot=0|1`, `?view=0|1|2`, `?seed=<n>` for repeatable autopilot personalities (same noise offsets and sleep/wake rolls). See `docs/d1-mapping-modes.md` for ready-made combinations.
 
-### Controls
+## No camera? Replay
 
--   **D**: Toggle Debug Overlay (shows skeleton tracking and internal metrics).
+Open `http://localhost:8000/?replay=recordings/synthetic-duo.json` to drive the full pipeline from a recording. Press A to turn autopilot off so all slots follow the recording. `recordings/solo-sweep.json` moves one control at a time (height, tilt, span). Regenerate the synthetic file with `node tools/make-synthetic-recording.js`, or record your own with R.
+
+## Test
+
+```bash
+node --test "tests/*.test.js"
+```
+
+Pure-JS unit tests (Node 21+ for the glob; no installs) cover pose extraction, slot smoothing/debounce, layout, the arrangement logic, record/replay and the manager's frame contract; `tests/architecture.test.js` guards the module boundaries. CI runs them on every PR.
 
 ## Architecture
 
-The application is structured into several modular classes. The source code is organized as follows:
+```
+RawObservation ─► SomaticGesture ─► EnsembleSlot ─► PerformanceFrame ─┬─► PerformanceVisualizer (WebGL + HUD)
+ (VisionSystem,    (PoseExtractor)   (smoothing,      (plain data)      └─► PerformanceListener  (Web Audio)
+  AutopilotSystem)                    presence)
+```
 
--   `src/`: Contains the main application logic.
-    -   `main.js`: The main entry point for the application.
-    -   `App.js`: The main application class that orchestrates the different modules.
-    -   `core/`: Core configuration and constants.
-    -   `PerformanceManager/`: Manages the state of the performers.
-    -   `PerformanceVisualizer/`: Manages the visual output.
-    -   `PerformanceListener/`: Manages the audio output.
-
-## Dependencies
-
--   [Three.js](https://threejs.org/) (Graphics)
--   [TensorFlow.js](https://www.tensorflow.org/js) (Machine Learning)
--   [Pose Detection](https://github.com/tensorflow/tfjs-models/tree/master/pose-detection) (MoveNet)
--   [Tween.js](https://github.com/tweenjs/tween.js/) (Animation)
+- `src/App.js` – composition root: DOM, keys, audio unlock, resize, render loop.
+- `src/core/` – immutable `Config.js`, data contract `Contracts.js`, `MathUtils.js` (no Three.js).
+- `src/PerformanceManager/` – vision loop (runs apart from the render loop), pose record/replay (`PoseRecording.js`), autopilot, pose → gesture, slot assignment (humans first) and smoothing.
+- `src/PerformanceVisualizer/` – lattice viewports, stencil masks, dynamic layout, HUD.
+- `src/PerformanceListener/` – `Arrangement.js` (pure musical logic), `AudioSystem.js` (scheduler), `Instruments.js`.
+- `tools/` – `serve.py` (no-cache dev server), `make-synthetic-recording.js`.
+- `recordings/` – pose recordings for replay. `docs/` – D1 listening guide, branch inventory.
 
 ## License
 

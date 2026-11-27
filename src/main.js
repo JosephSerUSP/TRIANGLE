@@ -6,5 +6,5 @@ import { App } from './App.js';
  */
 
 window.onload = () => {
-    new App();
+    window.triangle = new App(document);
 };

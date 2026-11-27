@@ -1,107 +1,119 @@
-import { VisionSystem } from './systems/VisionSystem.js';
-import { AutopilotSystem } from './systems/AutopilotSystem.js';
-import { Performer } from './state/Performer.js';
-import { CONFIG } from '../core/Config.js';
-import { PERFORMER_COLORS } from '../core/Constants.js';
-
 /**
- * Manages the input data and state of the performance.
- * Responsible for:
- * 1. Gathering input from VisionSystem and AutopilotSystem.
- * 2. Updating the state of Performers based on this input.
- * 3. Providing the current state to the Output systems.
+ * @fileoverview PerformanceManager: turns raw observations (camera poses,
+ * autopilot) into one PerformanceFrame per tick. Owns slot assignment and
+ * smoothing; knows nothing about rendering or audio.
  */
+import { EnsembleSlot } from './state/EnsembleSlot.js';
+import { AutopilotSystem } from './systems/AutopilotSystem.js';
+import { extractGesture, orderPoses } from './gesture/PoseExtractor.js';
+
 export class PerformanceManager {
     /**
-     * Creates an instance of PerformanceManager.
+     * @param {Object} config  CONFIG
+     * @param {{latestPoses:Array, cameraSize:{width:number,height:number}}|null} vision
+     *        anything exposing the latest poses (VisionSystem, or a fake in tests)
+     * @param {{random?: () => number}} [opts]  seeded PRNG for reproducible autopilot
      */
-    constructor() {
-        // --- 1. Initialize Inputs ---
-        // Note: VisionSystem depends on the DOM element 'video'
-        this.vision = new VisionSystem(document.getElementById('video'));
-
-        // --- 2. Initialize Performers ---
-        // P0: Physical (controls Bass)
-        // P1, P2: Virtual
-        this.performers = [
-            new Performer(PERFORMER_COLORS[0], true, false),
-            new Performer(PERFORMER_COLORS[1], false, true),
-            new Performer(PERFORMER_COLORS[2], false, true)
-        ];
-
-        this.autopilot = new AutopilotSystem([1, 2]);
+    constructor(config, vision, { random = Math.random } = {}) {
+        this.config = config;
+        this.vision = vision;
+        this.slots = config.slots.map(def => new EnsembleSlot(def, config.smoothing));
+        this.autopilotSlotIds = config.slots.filter(s => s.autopilot).map(s => s.id);
+        this.autopilot = new AutopilotSystem(this.autopilotSlotIds, random);
+        this.autopilotEnabled = config.defaults.autopilotEnabled;
+        this._humanCount = 0;
+        this._humanCountSince = 0;
     }
 
-    /**
-     * Initializes the manager (Vision System).
-     * @async
-     */
-    async init() {
-        try {
-            await this.vision.init();
-        } catch (err) {
-            console.error('Vision init failed:', err);
-        }
-    }
+    setAutopilot(enabled) { this.autopilotEnabled = !!enabled; }
 
-    /**
-     * Updates the state of the performance.
-     * @returns {Object} The current performance data { performers, poses }.
-     */
-    async update() {
-        // --- 1. Gather Input Data ---
-        const poses = await this.vision.update();
-        const autoData = this.autopilot.update();
-
-        // --- 2. Update Performer State ---
-        if (CONFIG.enableAutopilot) {
-            // Original behavior: P0 is physical (dominant), P1 & P2 are virtual
-            this.performers[0].updateFromPose(poses);
-
-            // Virtual Performers (P1, P2) look at Autopilot Data
-            autoData.forEach((data, idx) => {
-                 if (this.performers[idx]) {
-                     this.performers[idx].updateFromVirtualData(data);
-                 }
-            });
-        } else {
-            // Manual behavior: All performers are physical if data exists
-            // Sort poses by x-coordinate to consistently assign to Left, Center, Right
-
-            const sortedPoses = [...poses].sort((a, b) => {
-                const getX = (p) => {
-                    const ls = p.keypoints.find(k => k.name === 'left_shoulder');
-                    const rs = p.keypoints.find(k => k.name === 'right_shoulder');
-                    if (ls && rs) return (ls.x + rs.x) / 2;
-                    // Fallback to first keypoint or 0
-                    return p.keypoints[0] ? p.keypoints[0].x : 0;
-                };
-                return getX(a) - getX(b); // Ascending X (Left to Right)
-            });
-
-            if (CONFIG.layout && CONFIG.layout.flipOrder) {
-                sortedPoses.reverse();
-            }
-
-            // Assign sorted poses to performers [0, 1, 2]
-            for (let i = 0; i < this.performers.length; i++) {
-                if (i < sortedPoses.length) {
-                    this.performers[i].updateFromSinglePose(sortedPoses[i]);
-                } else {
-                    // No pose for this performer
-                    this.performers[i].updateFromSinglePose(null);
-                }
-            }
-        }
-
-        // Update Physics (Smoothing)
-        this.performers.forEach(p => p.updatePhysics());
-
+    _extractOpts() {
+        const size = this.vision ? this.vision.cameraSize : { width: 640, height: 480 };
+        const v = this.config.vision;
         return {
-            performers: this.performers,
-            poses: poses,
-            // We could return autoData if needed for debug, but poses is what DebugOverlay uses mainly
-            autoData: autoData
+            width: size.width,
+            height: size.height,
+            mirrored: v.mirrored,
+            minKeypointScore: v.minKeypointScore,
+            maxPitch: this.config.interaction.maxPitch,
+            maxYaw: this.config.interaction.maxYaw
+        };
+    }
+
+    /**
+     * How many slots humans hold. Grows at once; shrinks only after the extra
+     * body has been gone for `lossGraceSec`, so a one-frame dropout does not
+     * hand a slot back to autopilot and make it flicker.
+     */
+    _humanSlotCount(seen, timeSec) {
+        const grace = this.config.smoothing.lossGraceSec;
+        if (seen >= this._humanCount || timeSec - this._humanCountSince > grace) {
+            if (seen !== this._humanCount) this._humanCountSince = timeSec;
+            this._humanCount = seen;
+        }
+        if (seen >= this._humanCount) this._humanCountSince = timeSec;
+        return this._humanCount;
+    }
+
+    /**
+     * Slot assignment policy. Humans always come first:
+     *  - Non-autopilot slots are reserved for humans.
+     *  - With autopilot ON, extra humans take over autopilot slots (lowest id
+     *    first); autopilot only plays the slots no human needs.
+     *  - With autopilot OFF, every slot is a human slot.
+     * Humans are placed left-to-right on screen. If there are more bodies than
+     * slots, the closest ones win.
+     */
+    _assign(poses, timeSec) {
+        const opts = this._extractOpts();
+        let ordered = orderPoses(poses, opts);
+        if (ordered.length > this.slots.length) {
+            const near = p => -extractGesture(p, opts).depth; // smaller = closer
+            const keep = new Set([...ordered].sort((a, b) => near(a) - near(b)).slice(0, this.slots.length));
+            ordered = ordered.filter(p => keep.has(p));
+        }
+
+        const reserved = this.slots.filter(s => !this.autopilotSlotIds.includes(s.id));
+        const takeable = this.slots.filter(s => this.autopilotSlotIds.includes(s.id));
+        let humanSlots;
+        if (this.autopilotEnabled) {
+            const extra = Math.max(0, this._humanSlotCount(ordered.length, timeSec) - reserved.length);
+            humanSlots = [...reserved, ...takeable.slice(0, extra)].sort((a, b) => a.id - b.id);
+        } else {
+            humanSlots = this.slots;
+        }
+
+        humanSlots.forEach((slot, i) => {
+            slot.observe(ordered[i] ? extractGesture(ordered[i], opts) : null, 'physical');
+        });
+
+        if (this.autopilotEnabled) {
+            const virtual = this.autopilot.update(timeSec);
+            this.slots
+                .filter(s => !humanSlots.includes(s) && virtual.has(s.id))
+                .forEach(s => s.observe(virtual.get(s.id), 'virtual'));
+        }
+    }
+
+    /**
+     * @param {number} timeSec
+     * @param {number} dtSec
+     * @returns {import('../core/Contracts.js').PerformanceFrame}
+     */
+    tick(timeSec, dtSec) {
+        const poses = this.vision ? this.vision.latestPoses : [];
+        this._assign(poses, timeSec);
+        this.slots.forEach(s => s.update(dtSec));
+        return {
+            timeSec,
+            dtSec,
+            autopilotEnabled: this.autopilotEnabled,
+            slots: this.slots.map(s => s.snapshot()),
+            debug: {
+                poses,
+                cameraSize: this.vision ? this.vision.cameraSize : null,
+                mirrored: this.config.vision.mirrored
+            }
         };
     }
 }

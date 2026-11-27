@@ -1,51 +1,157 @@
+/**
+ * @fileoverview AppController / composition root. Owns DOM lookup, keyboard
+ * commands, audio unlock, resize and the render loop. Runtime state that used
+ * to live in mutable CONFIG (view mode, autopilot, mapping mode) lives here.
+ *
+ * Keys: D = cycle view mode, A = toggle autopilot, M = cycle audio mapping mode,
+ *       R = start/stop pose recording (downloads JSON), H = show key help.
+ * URL:  ?replay=recordings/<file>.json replays poses instead of the camera.
+ *       ?mode=<canon|tempo|harmony|sculpt>  ?autopilot=0|1  ?view=0|1|2  override startup defaults;
+ *       ?seed=<n> makes autopilot reproducible.
+ */
+import { CONFIG } from './core/Config.js';
+import { seededRandom } from './core/MathUtils.js';
 import { PerformanceManager } from './PerformanceManager/index.js';
+import { VisionSystem } from './PerformanceManager/systems/VisionSystem.js';
+import { PoseRecorder, ReplayVision } from './PerformanceManager/systems/PoseRecording.js';
 import { PerformanceVisualizer } from './PerformanceVisualizer/index.js';
 import { PerformanceListener } from './PerformanceListener/index.js';
 
-/**
- * Main application class.
- * Orchestrates the modular systems:
- * 1. Performance Manager (Input/State)
- * 2. Performance Visualizer (Graphics Output)
- * 3. Performance Listener (Audio Output)
- */
 export class App {
-    /**
-     * Creates a new App instance and wires up the modules.
-     */
-    constructor() {
-        // --- 1. Initialize Modules ---
-        this.manager = new PerformanceManager();
-        this.visualizer = new PerformanceVisualizer(this.manager.performers);
-        this.listener = new PerformanceListener();
+    /** @param {Document} doc */
+    constructor(doc = document) {
+        this.config = CONFIG;
+        const params = new URLSearchParams(location.search);
+        const replay = params.get('replay');
+        this.vision = replay
+            ? new ReplayVision(replay)
+            : new VisionSystem(doc.getElementById('video'), CONFIG.vision);
+        this.recorder = new PoseRecorder();
+        const seed = params.get('seed');
+        this.manager = new PerformanceManager(CONFIG, this.vision, {
+            random: seed !== null ? seededRandom(Number(seed) || 1) : Math.random
+        });
+        this.visualizer = new PerformanceVisualizer(CONFIG, {
+            container: doc.getElementById('canvas-container'),
+            debugCanvas: doc.getElementById('debug-layer'),
+            statusEl: doc.getElementById('status'),
+            metricsEl: doc.getElementById('metrics'),
+            hintEl: doc.getElementById('audio-hint')
+        });
+        this.listener = new PerformanceListener(CONFIG);
 
-        // Start initialization
+        const d = CONFIG.defaults;
+        const view = Number(params.get('view'));
+        this.viewMode = [0, 1, 2].includes(view) && params.has('view') ? view : d.viewMode;
+        this.visualizer.setViewMode(this.viewMode);
+        const mode = params.get('mode');
+        this.listener.setMappingMode(CONFIG.audio.mappingModes.includes(mode) ? mode : d.mappingMode);
+        if (params.has('autopilot')) this.manager.setAutopilot(params.get('autopilot') !== '0');
+
+        this._bindInput();
+        this._lastMs = null;
         this._init();
     }
 
-    /**
-     * Initializes the manager and starts the main loop.
-     * @private
-     * @async
-     */
-    async _init() {
-        await this.manager.init();
-        this.loop();
+    _bindInput() {
+        const unlock = () => {
+            this.listener.unlock().then(() => this.visualizer.setAudioLocked(false));
+        };
+        window.addEventListener('pointerdown', unlock);
+        window.addEventListener('touchstart', unlock);
+
+        window.addEventListener('keydown', (e) => {
+            unlock();
+            const k = e.key.toLowerCase();
+            if (k === 'd') {
+                this.viewMode = (this.viewMode + 1) % 3;
+                this.visualizer.setViewMode(this.viewMode);
+            } else if (k === 'a') {
+                this.manager.setAutopilot(!this.manager.autopilotEnabled);
+                this.visualizer.notify(`AUTOPILOT ${this.manager.autopilotEnabled ? 'ON' : 'OFF'}`);
+            } else if (k === 'm') {
+                const modes = CONFIG.audio.mappingModes;
+                const next = modes[(modes.indexOf(this.listener.mappingMode) + 1) % modes.length];
+                this.listener.setMappingMode(next);
+                this.visualizer.notify(`MAPPING: ${next.toUpperCase()}`);
+            } else if (k === 'r') {
+                this._toggleRecording();
+            } else if (k === 'h') {
+                this.visualizer.notify('D view · A autopilot · M mapping · R record · H help', 4);
+            }
+        });
+
+        window.addEventListener('resize', () => this.visualizer.resize(window.innerWidth, window.innerHeight));
     }
 
-    /**
-     * The main game loop.
-     * Fetches data from the Manager and passes it to Visualizer and Listener.
-     * @async
-     */
-    async loop() {
-        // --- 1. Get Performance Data (State) ---
-        const performanceData = await this.manager.update();
+    _toggleRecording() {
+        if (!this.recorder.recording) {
+            this.recorder.start(performance.now() / 1000, this.vision.cameraSize);
+            this.visualizer.notify('RECORDING POSES');
+            return;
+        }
+        this.visualizer.notify('RECORDING SAVED');
+        const rec = this.recorder.stop();
+        const blob = new Blob([JSON.stringify(rec)], { type: 'application/json' });
+        const a = document.createElement('a');
+        a.href = URL.createObjectURL(blob);
+        a.download = `triangle-${new Date().toISOString().replace(/[:.]/g, '-')}.json`;
+        document.body.appendChild(a); // Firefox ignores clicks on detached links
+        a.click();
+        a.remove();
+        setTimeout(() => URL.revokeObjectURL(a.href), 1000);
+    }
 
-        // --- 2. Update Outputs ---
-        this.visualizer.update(performanceData);
-        this.listener.update(performanceData);
+    async _init() {
+        try {
+            await this.vision.init();
+            this.vision.start();
+        } catch (err) {
+            console.error('Vision init failed:', err);
+            const el = document.getElementById('camera-msg');
+            if (el) {
+                el.textContent = this.vision instanceof ReplayVision
+                    ? `REPLAY FAILED (${err.message}). Check the ?replay= path. Autopilot only.`
+                    : `NO CAMERA (${err.name || err.message}). Autopilot only. `
+                        + 'Allow the camera and reload, or try ?replay=recordings/synthetic-duo.json';
+                el.style.display = 'block';
+            }
+        }
+        requestAnimationFrame(t => this._loop(t));
+    }
 
-        requestAnimationFrame(() => this.loop());
+    /** Once a second: render FPS and pose inferences per second (camera only). */
+    _updateRates(nowMs) {
+        this._frames = (this._frames || 0) + 1;
+        if (this._rateT === undefined) { this._rateT = nowMs; this._inf0 = this.vision.inferenceCount || 0; }
+        const span = nowMs - this._rateT;
+        if (span >= 1000) {
+            const inf = this.vision.inferenceCount;
+            this.rates = {
+                fps: (this._frames * 1000) / span,
+                pps: inf === undefined || !this.vision.running ? null : ((inf - this._inf0) * 1000) / span
+            };
+            this._frames = 0; this._rateT = nowMs; this._inf0 = inf || 0;
+        }
+    }
+
+    /** Render loop: never awaits inference (VisionSystem runs on its own). */
+    _loop(nowMs) {
+        const dt = this._lastMs === null ? 1 / 60 : Math.min(0.1, (nowMs - this._lastMs) / 1000);
+        this._lastMs = nowMs;
+        this._updateRates(nowMs);
+
+        const frame = this.manager.tick(nowMs / 1000, dt);
+        this.recorder.capture(nowMs / 1000, this.vision.latestPoses);
+        this.visualizer.update(frame, {
+            mappingMode: this.listener.mappingMode,
+            audio: this.listener.getStatus(),
+            rates: this.rates || null,
+            recording: this.recorder.recording,
+            replay: this.vision instanceof ReplayVision
+        });
+        this.listener.update(frame);
+
+        requestAnimationFrame(t => this._loop(t));
     }
 }

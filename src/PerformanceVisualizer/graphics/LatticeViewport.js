@@ -1,7 +1,6 @@
-// src/graphics/LatticeViewport.js
 import * as THREE from 'three';
 import * as TWEEN from '@tweenjs/tween.js';
-import { CONFIG } from '../../core/Config.js';
+import { lerp } from '../../core/MathUtils.js';
 
 /**
  * Manages the 3D scene rendering for a specific performer.
@@ -13,7 +12,9 @@ export class LatticeViewport {
      * Creates a new LatticeViewport instance.
      * @param {number|string} colorHex - The primary color for this viewport.
      */
-    constructor(colorHex) {
+    constructor(colorHex, visualConfig) {
+        this.visual = visualConfig;
+        this.baseColor = new THREE.Color(colorHex);
         this.scene = new THREE.Scene();
         this.scene.fog = new THREE.FogExp2(0x000000, 0.0004);
 
@@ -23,7 +24,7 @@ export class LatticeViewport {
         this.uniforms = {
             uTime: { value: 0 },
             uPhaseZ: { value: 0 },
-            uGridSize: { value: CONFIG.grid.size },
+            uGridSize: { value: this.visual.gridSize },
             uColor: { value: new THREE.Color(colorHex) },
             uRotation: { value: new THREE.Vector3(0, 0, 0) }
         };
@@ -45,8 +46,8 @@ export class LatticeViewport {
      * @private
      */
     _initLattice() {
-        const size = CONFIG.grid.size;
-        const divisions = CONFIG.grid.divisions;
+        const size = this.visual.gridSize;
+        const divisions = this.visual.gridDivisions;
         const step = size / divisions;
 
         this.finalPositions = [];
@@ -187,6 +188,9 @@ export class LatticeViewport {
      */
     _animateInLattice(duration = 4000) {
         const posAttr = this.geometry.getAttribute('position');
+        if (this._tween) this._tween.stop();
+        posAttr.array.fill(0);
+        posAttr.needsUpdate = true;
         const vertexCount = posAttr.count;
         const finalPos = this.finalPositions;
         const lineCount = vertexCount / 2;
@@ -199,20 +203,7 @@ export class LatticeViewport {
 
         const progress = { value: 0 };
 
-        // Handle case where TWEEN might not be fully initialized or compatible
-        if (!TWEEN || !TWEEN.Tween) {
-            for (let v = 0; v < vertexCount; v++) {
-                posAttr.setXYZ(v,
-                    finalPos[v * 3],
-                    finalPos[v * 3 + 1],
-                    finalPos[v * 3 + 2]
-                );
-            }
-            posAttr.needsUpdate = true;
-            return;
-        }
-
-        new TWEEN.Tween(progress)
+        this._tween = new TWEEN.Tween(progress)
             .to({ value: 1 }, duration)
             .easing(TWEEN.Easing.Exponential.Out)
             .onUpdate(() => {
@@ -240,73 +231,46 @@ export class LatticeViewport {
     }
 
     /**
-     * Renders the scene for this viewport.
-     * Assumes the stencil buffer has already been masked by the caller.
-     * @param {THREE.WebGLRenderer} renderer - The Three.js renderer.
-     * @param {object} rect - The viewport bounding box {x, y, width, height}.
-     * @param {import('../../PerformanceManager/state/Performer.js').Performer} performer - The state of the performer to render.
+     * Renders the scene for this viewport. Assumes the stencil is already masked.
+     * @param {THREE.WebGLRenderer} renderer
+     * @param {{x,y,width,height}} rect
+     * @param {import('../../core/Contracts.js').SlotSnapshot} slot
+     * @param {boolean} showTriangle
      */
-    render(renderer, rect, performer) {
+    render(renderer, rect, slot, showTriangle) {
         const { x, y, width, height } = rect;
-
-        // Update uniforms
+        const g = slot.gesture;
+        // A performer arriving rebuilds the lattice line by line (startup does 4 s).
+        if (slot.active && this._wasActive === false) this._animateInLattice(1500);
+        this._wasActive = slot.active;
         this.camera.aspect = width / height;
         this.camera.updateProjectionMatrix();
-
-        // Match viewport to the scissor rect
         renderer.setViewport(x, y, width, height);
 
-        const now = performance.now() * 0.001;
-        this.uniforms.uTime.value = now;
-        this.uniforms.uPhaseZ.value = performer.current.phaseZ;
+        this.uniforms.uTime.value = performance.now() * 0.001;
+        // phaseZ is a visual-only quantity derived here, not in state.
+        this.uniforms.uPhaseZ.value = g.depth * this.visual.phaseScale;
+        this.uniforms.uRotation.value.set(g.orientation.pitch, g.orientation.yaw, g.orientation.roll);
 
-        const rot = this.uniforms.uRotation.value;
-        rot.set(
-            performer.current.pitch,
-            performer.current.yaw,
-            performer.current.roll
-        );
+        const intensity = lerp(0.18, 1.0, slot.presence);
+        const b = this.baseColor;
+        this.uniforms.uColor.value.setRGB(b.r * intensity, b.g * intensity, b.b * intensity);
 
-        // Color intensity: bright if active, dim if not
-        const base = performer.baseColor;
-        // Interpolate intensity based on presence to match viewport ease-out
-        const intensity = THREE.MathUtils.lerp(0.18, 1.0, performer.presence);
-        this.uniforms.uColor.value.setRGB(
-            base.r * intensity,
-            base.g * intensity,
-            base.b * intensity
-        );
-
-        const tri = performer.triangle;
-        const showTriangle = CONFIG.viewMode >= 1;
-
-        if (tri.visible && performer.hasPerformer && showTriangle) {
-            this.triMesh.visible = true;
-            this.triWire.visible = true;
-
-            const positions = this.triMesh.geometry.attributes.position.array;
-            const scale = 320;
-            const zOffset = 500;
-
-            positions[0] = tri.v1.x * scale;
-            positions[1] = tri.v1.y * scale;
-            positions[2] = zOffset;
-
-            positions[3] = tri.v2.x * scale;
-            positions[4] = tri.v2.y * scale;
-            positions[5] = zOffset;
-
-            positions[6] = tri.v3.x * scale;
-            positions[7] = tri.v3.y * scale;
-            positions[8] = zOffset;
-
+        const tri = g.triangle;
+        const visible = tri.visible && slot.active && showTriangle;
+        this.triMesh.visible = visible;
+        this.triWire.visible = visible;
+        if (visible) {
+            const pos = this.triMesh.geometry.attributes.position.array;
+            const sc = this.visual.triangleScale, z = this.visual.triangleZ;
+            tri.vertices.forEach((v, i) => {
+                pos[i * 3] = v.x * sc;
+                pos[i * 3 + 1] = v.y * sc;
+                pos[i * 3 + 2] = z;
+            });
             this.triMesh.geometry.attributes.position.needsUpdate = true;
             this.triWire.geometry.attributes.position.needsUpdate = true;
-        } else {
-            this.triMesh.visible = false;
-            this.triWire.visible = false;
         }
-
         renderer.render(this.scene, this.camera);
     }
 }

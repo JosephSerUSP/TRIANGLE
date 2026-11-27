@@ -1,4 +1,8 @@
-import { CONFIG } from '../../core/Config.js';
+/**
+ * @fileoverview Web Audio voices. Every voice: notes -> [filter] -> output gain
+ * -> panner -> destination, plus an optional post-pan reverb send. Mix levels
+ * are injected (CONFIG.audio.mix), never read from a global.
+ */
 
 /**
  * Base class for all synthesizers.
@@ -10,30 +14,29 @@ export class Synthesizer {
      * @param {AudioContext} ctx - The Web Audio API AudioContext.
      * @param {AudioNode} destination - The destination node to connect to.
      */
-    constructor(ctx, destination) {
+    constructor(ctx, destination, { level = 1.0, reverb = null, send = 0 } = {}) {
         this.ctx = ctx;
         this.destination = destination;
-
-        // Panner for spatial audio
         this.panner = ctx.createStereoPanner();
-
-        // Output gain
         this.output = ctx.createGain();
-
-        // Chain: Output -> Panner -> Destination
+        this.output.gain.value = level;
+        // Chain: Output -> Panner -> Destination (+ panned reverb send)
         this.output.connect(this.panner);
         this.panner.connect(destination);
+        if (reverb && send > 0) {
+            this.send = ctx.createGain();
+            this.send.gain.value = send;
+            this.panner.connect(this.send);
+            this.send.connect(reverb);
+        }
     }
 
     /**
      * Sets the stereo pan of the synthesizer.
      * @param {number} value - The pan value, from -1 (left) to 1 (right).
      */
-    setPan(value) {
-        // value from -1 (left) to 1 (right)
-        if (this.panner) {
-            this.panner.pan.setValueAtTime(value, this.ctx.currentTime);
-        }
+    setPan(value, time = this.ctx.currentTime) {
+        this.panner.pan.setTargetAtTime(value, time, 0.05);
     }
 
     /**
@@ -41,7 +44,7 @@ export class Synthesizer {
      * To be implemented by subclasses.
      * @param {object} params - The modulation parameters.
      */
-    modulate(params) {
+    modulate(params, time) {
         // To be implemented by subclasses for timbre/filter modulation
     }
 
@@ -68,10 +71,8 @@ export class KickDrum extends Synthesizer {
      * @param {AudioContext} ctx - The Web Audio API AudioContext.
      * @param {AudioNode} destination - The destination node to connect to.
      */
-    constructor(ctx, destination) {
-        super(ctx, destination);
-        // Kick gain from config
-        this.output.gain.value = CONFIG.audio.mix.kick;
+    constructor(ctx, destination, opts) {
+        super(ctx, destination, opts);
     }
 
     /**
@@ -111,27 +112,22 @@ export class PulseBass extends Synthesizer {
      * @param {AudioContext} ctx - The Web Audio API AudioContext.
      * @param {AudioNode} destination - The destination node to connect to.
      */
-    constructor(ctx, destination) {
-        super(ctx, destination);
-        this.filter = ctx.createBiquadFilter();
-        this.filter.type = 'lowpass';
-        this.filter.frequency.value = 400;
-        this.filter.Q.value = 5;
-        this.filter.connect(this.output); // Connect filter to output (which goes to panner)
-
-        // Config volume
-        this.output.gain.value = CONFIG.audio.mix.bass;
+    constructor(ctx, destination, opts) {
+        super(ctx, destination, opts);
+        // Base cutoff set by modulate(); each note gets its own enveloped filter
+        // scaled from it, so the envelope no longer fights modulation.
+        this.baseCutoff = 400;
     }
 
     modulate(params) {
-        if (params.timbre) {
-            // Map 0..1 to filter freq 100..1000
-            const freq = 100 + params.timbre * 900;
-            this.filter.frequency.setTargetAtTime(freq, this.ctx.currentTime, 0.1);
-        }
+        if (params.timbre != null) this.baseCutoff = 100 + params.timbre * 900;
     }
 
     playNote(freq, time, duration, velocity) {
+        const filter = this.ctx.createBiquadFilter();
+        filter.type = 'lowpass';
+        filter.Q.value = 5;
+        filter.connect(this.output);
         const osc = this.ctx.createOscillator();
         osc.type = 'sawtooth';
         osc.frequency.value = freq;
@@ -145,7 +141,7 @@ export class PulseBass extends Synthesizer {
         const release = 0.1;
 
         osc.connect(gain);
-        gain.connect(this.filter);
+        gain.connect(filter);
 
         osc.start(time);
 
@@ -157,11 +153,11 @@ export class PulseBass extends Synthesizer {
 
         osc.stop(time + duration + release + 0.1);
 
-        // Filter envelope for "wow" effect - added to base cutoff
-        // We use setTargetAtTime in modulate, so here we might want to punch it
-        this.filter.frequency.setValueAtTime(200, time);
-        this.filter.frequency.exponentialRampToValueAtTime(2000, time + attack);
-        this.filter.frequency.exponentialRampToValueAtTime(400, time + attack + decay);
+        // Per-note "wow" envelope around the modulated base cutoff.
+        const base = this.baseCutoff;
+        filter.frequency.setValueAtTime(base * 0.5, time);
+        filter.frequency.exponentialRampToValueAtTime(base * 5, time + attack);
+        filter.frequency.exponentialRampToValueAtTime(base, time + attack + decay);
     }
 }
 
@@ -175,26 +171,20 @@ export class StringPad extends Synthesizer {
      * @param {AudioContext} ctx - The Web Audio API AudioContext.
      * @param {AudioNode} destination - The destination node to connect to.
      */
-    constructor(ctx, destination) {
-        super(ctx, destination);
-        // Config volume
-        this.output.gain.value = CONFIG.audio.mix.pad;
+    constructor(ctx, destination, opts) {
+        super(ctx, destination, opts);
 
         this.filter = ctx.createBiquadFilter();
         this.filter.type = 'lowpass';
         this.filter.frequency.value = 2000;
 
-        // Input to this synth goes to filter first
-        this.input = ctx.createGain();
-        this.input.connect(this.filter);
         this.filter.connect(this.output);
     }
 
-    modulate(params) {
-        if (params.timbre) {
-            // Open filter with expression
+    modulate(params, time) {
+        if (params.timbre != null) {
             const freq = 500 + params.timbre * 4000;
-            this.filter.frequency.setTargetAtTime(freq, this.ctx.currentTime, 0.5);
+            this.filter.frequency.setTargetAtTime(freq, time ?? this.ctx.currentTime, 0.5);
         }
     }
 
@@ -240,11 +230,8 @@ export class PluckSynth extends Synthesizer {
      * @param {AudioContext} ctx - The Web Audio API AudioContext.
      * @param {AudioNode} destination - The destination node to connect to.
      */
-    constructor(ctx, destination) {
-        super(ctx, destination);
-
-        // Config volume
-        this.output.gain.value = CONFIG.audio.mix.ostinato;
+    constructor(ctx, destination, opts) {
+        super(ctx, destination, opts);
 
         this.filter = this.ctx.createBiquadFilter();
         this.filter.type = 'lowpass';
@@ -254,10 +241,10 @@ export class PluckSynth extends Synthesizer {
         this.filter.connect(this.output);
     }
 
-    modulate(params) {
-         if (params.timbre) {
+    modulate(params, time) {
+        if (params.timbre != null) {
             const freq = 400 + params.timbre * 2000;
-            this.filter.frequency.setTargetAtTime(freq, this.ctx.currentTime, 0.1);
+            this.filter.frequency.setTargetAtTime(freq, time ?? this.ctx.currentTime, 0.1);
         }
     }
 
@@ -293,10 +280,8 @@ export class ArpSynth extends Synthesizer {
      * @param {AudioContext} ctx - The Web Audio API AudioContext.
      * @param {AudioNode} destination - The destination node to connect to.
      */
-    constructor(ctx, destination) {
-        super(ctx, destination);
-        // Config volume
-        this.output.gain.value = CONFIG.audio.mix.arp;
+    constructor(ctx, destination, opts) {
+        super(ctx, destination, opts);
     }
 
     // ArpSynth doesn't strictly need a filter modulation but we can add one if we want
