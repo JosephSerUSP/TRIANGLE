@@ -61,9 +61,11 @@ RawObservation ─► SomaticGesture ─► EnsembleSlot ─► PerformanceFrame
 
 - `src/App.js` – composition root: DOM, keys, audio unlock, resize, render loop.
 - `src/core/` – immutable `Config.js`, data contract `Contracts.js`, `MathUtils.js` (no Three.js).
-- `src/PerformanceManager/` – vision loop (runs apart from the render loop), autopilot, pose → gesture, slot assignment and smoothing.
+- `src/PerformanceManager/` – vision loop (runs apart from the render loop), pose record/replay (`PoseRecording.js`), autopilot, pose → gesture, slot assignment (humans first) and smoothing.
 - `src/PerformanceVisualizer/` – lattice viewports, stencil masks, dynamic layout, HUD.
 - `src/PerformanceListener/` – `Arrangement.js` (pure musical logic), `AudioSystem.js` (scheduler), `Instruments.js`.
+- `tools/` – `serve.py` (no-cache dev server), `make-synthetic-recording.js`.
+- `recordings/` – pose recordings for replay. `docs/` – D1 listening guide, branch inventory.
 
 ## License
 

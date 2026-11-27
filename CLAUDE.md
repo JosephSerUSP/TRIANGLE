@@ -25,4 +25,5 @@ Webcam-driven audio-visual instrument, browser-only, zero build. GitHub: `Joseph
 ## Next
 - Play-test the mapping modes with `docs/d1-mapping-modes.md`; choose the default (`CONFIG.defaults.mappingMode`).
 - Branches: inventory + suggested handling in `docs/branches.md` (2026-11-27). Deleting unmerged ones needs Jo's OK; the audio experiments there may feed D1.
-- Verified 2026-11-27 in the in-app browser via replay (render, layout, HUD, keys, audio unlock, mapping modes). Live webcam still needs a check by Jo.
+- Verified 2026-11-27 in the in-app browser via replay (render, layout, HUD, keys, audio unlock, all 4 mapping modes, human takeover, URL overrides, camera-denied notice). Live webcam + actual sound quality still need Jo.
+- PR: https://github.com/JosephSerUSP/TRIANGLE/pull/44 (branch `refactor/ontology`). Pushing from this machine: git's stored credential is `zerafidev` (no access); use `gh auth setup-git` or `git -c credential.helper= -c 'credential.helper=!gh auth git-credential' push`.
