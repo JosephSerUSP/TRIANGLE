@@ -67,7 +67,7 @@ export class DebugOverlay {
         frame.slots.forEach((s, i) => {
             const t = s.gesture.triangle;
             const walk = a && a.walks && a.walks[i] ? ` walk ${a.walks[i] > 0 ? '+' : ''}${a.walks[i]}` : '';
-            const ch = a ? `  ${a.channels[i] || ''}${a.transposes[i] ? ' +' + a.transposes[i] : ''}${walk}` : '';
+            const ch = a ? `  ${a.channels[i] || ''}${a.lifts[i] ? ' lift ' + a.lifts[i] : ''}${walk}` : '';
             text += `P${s.id} ${s.role.padEnd(8)} ${s.binding.padEnd(8)} ${s.active ? 'ON ' : 'off'} pres ${s.presence.toFixed(2)}${ch}\n`;
             text += `  depth: ${s.gesture.depth.toFixed(2)}  triA: ${t.area.toFixed(3)}  W: ${t.width.toFixed(2)}  H: ${t.height.toFixed(2)}\n`;
         });

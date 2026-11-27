@@ -1,6 +1,6 @@
 # D1 listening guide: choosing the gesture→music mapping
 
-TRIANGLE has four candidate mappings (decision D1, still open). Press **M** to cycle them. A notice shows the current mode, and the debug HUD (D twice) shows BPM, bar, each channel's lifecycle and transposes.
+TRIANGLE has four candidate mappings (decision D1, still open). Press **M** to cycle them. A notice shows the current mode, and the debug HUD (D twice) shows BPM, bar, each channel's lifecycle, chord-tone lift and walk.
 
 Quick setups (with `python tools/serve.py` running):
 

@@ -93,7 +93,7 @@ export const CONFIG = deepFreeze({
          *  canon   - fixed Shibuya-kei progression, 120 BPM; hand height = expression.
          *  tempo   - canon + average hand width of active slots drives tempo.
          *  harmony - tempo + each slot's hand height picks an interval that
-         *            transposes its voice (README's original "noteRatio" idea).
+         *            lifts its voice by whole chord tones (README's original "noteRatio" idea, made consonant).
          *  sculpt  - harmony + hand roll walks the chord tones of ostinato/arp,
          *            rhythm gates are deterministic (same gesture = same groove),
          *            each slot's two voices spread ±0.3 in stereo. Ideas mined
