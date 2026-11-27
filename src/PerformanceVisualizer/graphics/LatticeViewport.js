@@ -188,6 +188,9 @@ export class LatticeViewport {
      */
     _animateInLattice(duration = 4000) {
         const posAttr = this.geometry.getAttribute('position');
+        if (this._tween) this._tween.stop();
+        posAttr.array.fill(0);
+        posAttr.needsUpdate = true;
         const vertexCount = posAttr.count;
         const finalPos = this.finalPositions;
         const lineCount = vertexCount / 2;
@@ -200,7 +203,7 @@ export class LatticeViewport {
 
         const progress = { value: 0 };
 
-        new TWEEN.Tween(progress)
+        this._tween = new TWEEN.Tween(progress)
             .to({ value: 1 }, duration)
             .easing(TWEEN.Easing.Exponential.Out)
             .onUpdate(() => {
@@ -237,6 +240,9 @@ export class LatticeViewport {
     render(renderer, rect, slot, showTriangle) {
         const { x, y, width, height } = rect;
         const g = slot.gesture;
+        // A performer arriving rebuilds the lattice line by line (startup does 4 s).
+        if (slot.active && this._wasActive === false) this._animateInLattice(1500);
+        this._wasActive = slot.active;
         this.camera.aspect = width / height;
         this.camera.updateProjectionMatrix();
         renderer.setViewport(x, y, width, height);
