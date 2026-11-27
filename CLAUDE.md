@@ -21,8 +21,7 @@ Webcam-driven audio-visual instrument, browser-only, zero build. GitHub: `Joseph
 - MoveNet `left_*` = the person's left, imaged at **higher** pixel x by a front camera. Synthetic poses (tests/helpers.js, tools/make-synthetic-recording.js) must follow this, or level hands read as roll = ±π.
 - A solo human always lands in slot 0 = **bass**. Any gesture→music idea must reach the bass voice, or a solo player won't hear it (the `sculpt` walk had this bug).
 - `node --test` with a glob needs Node 21+ (CI uses 22).
-- Python on Windows writes CRLF by default; repo is LF (`.gitattributes`). Use `newline='
-'` in scripted edits.
+- Python on Windows writes CRLF by default; repo is LF (`.gitattributes`). Use `newline='\n'` in scripted edits. Shell heredocs also eat backslashes (`\\b` → `\b`), so write regex-bearing code with the Write/Edit tools, and gate commits on the test exit code, not on grep output.
 
 ## Jo's decisions
 - **TRIANGLE is the canonical name** (the old "Perfume: Lattice Performer" name is retired).
