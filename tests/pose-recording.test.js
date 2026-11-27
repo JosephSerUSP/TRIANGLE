@@ -26,7 +26,7 @@ test('recorder skips unchanged pose arrays and round-trips through replay', asyn
     const v = new ReplayVision(rec, () => now);
     await v.init(); v.start();
     now = 0.52; // inside the 0.55 s loop
-    assert.equal(v.latestPoses[0].keypoints[0].x, 400 - 60);
+    assert.equal(v.latestPoses[0].keypoints[0].x, 400 + 60);
 });
 
 test('replayed poses drive the manager like a camera', async () => {

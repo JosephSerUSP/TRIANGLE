@@ -56,7 +56,7 @@ test('sculpt: deterministic gates and roll-driven chord walk', async () => {
     assert.deepEqual(a, b);
     assert.ok(a.some(Boolean) && !a.every(Boolean));
     const s = snap(0.5, 0.5);
-    s.gesture.orientation.roll = Math.PI / 2;
+    s.gesture.orientation.roll = Math.PI / 4; // a 45° lean = full walk
     const ctl = voiceControls(s, CONFIG.audio, 'sculpt');
     assert.equal(tiltOffset(ctl), 2);
     assert.equal(tiltOffset(voiceControls(s, CONFIG.audio, 'harmony')), 0);

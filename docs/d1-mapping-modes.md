@@ -9,6 +9,7 @@ Quick setups (with `python tools/serve.py` running):
 | Yourself, one mode, HUD on | `http://localhost:8000/?mode=sculpt&view=2` |
 | Yourself alone, no virtual players | `http://localhost:8000/?autopilot=0&view=2` |
 | No camera, two recorded bodies | `http://localhost:8000/?replay=recordings/synthetic-duo.json&autopilot=0&view=2` |
+| No camera, one control at a time (height 0–10 s, tilt 10–20 s, span 20–30 s) | `http://localhost:8000/?replay=recordings/solo-sweep.json&autopilot=0&view=2&mode=sculpt` |
 
 | Mode | What to do | What to listen for |
 |---|---|---|

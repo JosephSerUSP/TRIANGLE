@@ -48,8 +48,8 @@ export function voiceControls(slot, audioCfg, mode) {
         pan: clamp(slot.gesture.orientation.yaw / (Math.PI / 2), -1, 1),
         transpose: 0,
         width,
-        /** Hand roll mapped to 0..1 (0.5 = level hands). Used by `sculpt`. */
-        tilt: clamp(slot.gesture.orientation.roll / Math.PI + 0.5, 0, 1),
+        /** Hand roll mapped to 0..1 (0.5 = level, 0/1 = a ±45° lean). Used by `sculpt`. */
+        tilt: clamp(slot.gesture.orientation.roll / (Math.PI / 2) + 0.5, 0, 1),
         deterministic: mode === 'sculpt'
     };
     if ((mode === 'harmony' || mode === 'sculpt') && t.visible) {

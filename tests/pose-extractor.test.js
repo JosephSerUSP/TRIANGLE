@@ -19,9 +19,13 @@ test('gesture is finite and triangle mirrored into canonical space', () => {
         ...g.triangle.vertices.flatMap(v => [v.x, v.y])];
     all.forEach(v => assert.ok(Number.isFinite(v)));
     assert.equal(g.triangle.visible, true);
-    // left_wrist sits at low pixel x; mirrored it lands screen-right (+x).
-    assert.ok(g.triangle.vertices[1].x > 0);
+    // left_wrist is imaged at high pixel x; mirrored (like a mirror) it lands screen-left.
+    assert.ok(g.triangle.vertices[1].x < 0);
     assert.ok(g.triangle.height > 0.5);
+});
+
+test('level hands read as roll ~0 (real camera left/right geometry)', () => {
+    assert.ok(Math.abs(extractGesture(pose(), OPTS).orientation.roll) < 1e-6);
 });
 
 test('no wrists -> invisible triangle, roll 0', () => {
