@@ -99,6 +99,12 @@ export class App {
             this.vision.start();
         } catch (err) {
             console.error('Vision init failed:', err);
+            const el = document.getElementById('camera-msg');
+            if (el) {
+                el.textContent = `NO CAMERA (${err.name || err.message}). Autopilot only. `
+                    + 'Allow the camera and reload, or try ?replay=recordings/synthetic-duo.json';
+                el.style.display = 'block';
+            }
         }
         requestAnimationFrame(t => this._loop(t));
     }
