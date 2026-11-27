@@ -62,3 +62,12 @@ test('sculpt: deterministic gates and roll-driven chord walk', async () => {
     assert.equal(tiltOffset(voiceControls(s, CONFIG.audio, 'harmony')), 0);
     assert.ok(ctl.transpose > 0);
 });
+
+test('evolution arc ramps from entry and resets when silent', async () => {
+    const { evolution } = await import('../src/PerformanceListener/audio/Arrangement.js');
+    const ch = createChannel();
+    assert.equal(evolution(ch, 5, 30), 0);
+    stepChannel(ch, true, 10, 8, 4);
+    assert.equal(evolution(ch, 25, 30), 0.5);
+    assert.equal(evolution(ch, 100, 30), 1);
+});

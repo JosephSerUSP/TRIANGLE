@@ -7,7 +7,7 @@ import { clamp } from '../../core/MathUtils.js';
 import { CHORD_PROGRESSION, CHORD_TONE } from './MusicTheory.js';
 import { PulseBass, StringPad, PluckSynth, ArpSynth, KickDrum } from './Instruments.js';
 import {
-    chordIndexForBar, stepChannel, createChannel, voiceControls, targetTempo, resyncNoteTime, gate, tiltOffset
+    chordIndexForBar, stepChannel, createChannel, voiceControls, targetTempo, resyncNoteTime, gate, tiltOffset, evolution
 } from './Arrangement.js';
 
 const PRIMARY = { bass: PulseBass, ostinato: PluckSynth, arp: ArpSynth };
@@ -125,6 +125,8 @@ export class AudioSystem {
             v.pad.modulate({ timbre }, time);
             if (ch.status === 'SILENT') return;
             const tr = ctl.transpose;
+            // sculpt: parts build up over the first evolutionSec of a performer's stay.
+            const arc = ctl.deterministic ? 0.5 + 0.5 * evolution(ch, this.ctx.currentTime, this.cfg.evolutionSec) : 1;
 
             if (v.role === 'bass') {
                 let note = null;
@@ -146,7 +148,7 @@ export class AudioSystem {
                     v.pad.playNote(this._freq(chord.notes[CHORD_TONE.root] + tr, 2), time, 4.0, 0.4 * timbre);
                 }
             } else if (v.role === 'ostinato') {
-                const density = { INTRO: 0.2, OUTRO: 0.1, MAIN: 0.2 + ctl.expression * 0.8 }[ch.status];
+                const density = { INTRO: 0.2, OUTRO: 0.1, MAIN: 0.2 + ctl.expression * 0.8 }[ch.status] * arc;
                 if (gate(density, beat, this.bar, i, ctl.deterministic)) {
                     const len = chord.notes.length;
                     const n = chord.notes[(((this.ostinatoPattern[beat] + tiltOffset(ctl)) % len) + len) % len];
@@ -156,7 +158,7 @@ export class AudioSystem {
                     v.pad.playNote(this._freq(chord.notes[CHORD_TONE.fifth] + tr, 4), time, 4.0, 0.3 * timbre);
                 }
             } else {
-                const density = { INTRO: 0.1, OUTRO: 0.05, MAIN: 0.1 + ctl.expression * 0.9 }[ch.status];
+                const density = { INTRO: 0.1, OUTRO: 0.05, MAIN: 0.1 + ctl.expression * 0.9 }[ch.status] * arc;
                 if (gate(density, beat, this.bar, i, ctl.deterministic)) {
                     const len = chord.notes.length;
                     const n = chord.notes[(((beat + tiltOffset(ctl)) % len) + len) % len];

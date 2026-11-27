@@ -83,6 +83,8 @@ export const CONFIG = deepFreeze({
         bpmMax: 140,
         introSec: 8.0,
         outroSec: 4.0,
+        /** `sculpt` only: seconds for a part to build from half to full density. */
+        evolutionSec: 30,
         /** Max 16th notes the scheduler may queue in one pass (tab-resume guard). */
         maxCatchUpSteps: 4,
         /**

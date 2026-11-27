@@ -79,6 +79,16 @@ export function tiltOffset(ctl) {
     return Math.round((ctl.tilt - 0.5) * 4); // -2..+2 chord tones
 }
 
+/**
+ * 0..1 "arc" of a channel: grows over `rampSec` since it entered (idea from the
+ * audio-evolution-kick branch). `sculpt` scales density by 0.5 + 0.5 * arc,
+ * so a performer's part builds up the longer they stay.
+ */
+export function evolution(ch, now, rampSec) {
+    if (ch.status === 'SILENT') return 0;
+    return clamp((now - ch.startTime) / rampSec, 0, 1);
+}
+
 /** Target tempo for the ensemble. Wide arms = slow (README's original intent). */
 export function targetTempo(controls, audioCfg, mode) {
     if (mode === 'canon') return audioCfg.baseTempo;
