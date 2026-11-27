@@ -143,6 +143,9 @@ export class AudioSystem {
                     }
                     const walked = note === 1 ? bassWalkInterval(chord, tiltOffset(ctl)) : null;
                     if (walked !== null) interval = walked; // sculpt: tilt re-voices the bass
+                    // harmony/sculpt: hand height reaches the bass too (folded into one
+                    // octave to stay in register), so a solo performer hears it.
+                    else interval += tr % 12;
                     v.primary.playNote(this._freq(interval, 1), time, 0.2, 0.5 + timbre * 0.5);
                 }
                 const padBars = ch.status === 'MAIN' ? 2 : 4;
