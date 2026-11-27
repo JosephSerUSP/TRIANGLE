@@ -43,6 +43,14 @@ test('triangle snaps to the body when it first appears, then smooths', () => {
     assert.ok(x < 0.5 && x > -0.5);
 });
 
+test('presence settles at exactly 0 / 1 (layout can drop the viewport)', () => {
+    const s = new EnsembleSlot(def, CONFIG.smoothing);
+    run(s, 4, 1 / 60, g());
+    assert.equal(s.presence, 1);
+    run(s, 6, 1 / 60, null);
+    assert.equal(s.presence, 0);
+});
+
 test('snapshot does not alias internal state', () => {
     const s = new EnsembleSlot(def, CONFIG.smoothing);
     run(s, 0.5, 1 / 60, g());

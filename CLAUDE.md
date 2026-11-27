@@ -30,7 +30,7 @@ Webcam-driven audio-visual instrument, browser-only, zero build. GitHub: `Joseph
 
 ## Next
 1. **Jo:** play-test with a webcam and sound using `docs/d1-mapping-modes.md`, then choose the D1 default (`CONFIG.defaults.mappingMode`) and retire the other modes.
-2. **Jo:** review/merge https://github.com/JosephSerUSP/TRIANGLE/pull/44 (branch `refactor/ontology`, CI green, 57 tests).
+2. **Jo:** review/merge https://github.com/JosephSerUSP/TRIANGLE/pull/44 (branch `refactor/ontology`, CI green, 58 tests).
 3. **Jo:** decide on unmerged branches (`docs/branches.md`): the "superseded" group is safe to delete; the audio group was mined for `sculpt`.
 4. Optional: register TRIANGLE in the Notion Agent Hub (not done; it is an outward change).
 
