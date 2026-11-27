@@ -29,6 +29,15 @@ test('recorder skips unchanged pose arrays and round-trips through replay', asyn
     assert.equal(v.latestPoses[0].keypoints[0].x, 400 + 60);
 });
 
+test('recordings keep only name/x/y/score, rounded', () => {
+    const r = new PoseRecorder();
+    r.start(0, { width: 640, height: 480 });
+    r.capture(0.12345, [{ score: 0.9, keypoints: [{ name: 'nose', x: 100.123456, y: 50.987654, score: 0.876543, extra: 1 }] }]);
+    const k = r.stop().frames[0];
+    assert.equal(k.t, 0.123);
+    assert.deepEqual(k.poses[0], { keypoints: [{ name: 'nose', x: 100.1, y: 51, score: 0.88 }] });
+});
+
 test('replayed poses drive the manager like a camera', async () => {
     const frames = Array.from({ length: 60 }, (_, i) => ({ t: i / 30, poses: [pose()] }));
     let now = 0;
