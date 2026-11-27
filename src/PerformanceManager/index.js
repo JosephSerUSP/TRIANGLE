@@ -20,6 +20,8 @@ export class PerformanceManager {
         this.autopilotSlotIds = config.slots.filter(s => s.autopilot).map(s => s.id);
         this.autopilot = new AutopilotSystem(this.autopilotSlotIds);
         this.autopilotEnabled = config.defaults.autopilotEnabled;
+        this._humanCount = 0;
+        this._humanCountSince = 0;
     }
 
     setAutopilot(enabled) { this.autopilotEnabled = !!enabled; }
@@ -38,32 +40,58 @@ export class PerformanceManager {
     }
 
     /**
-     * Slot assignment policy.
-     *  autopilot ON : non-autopilot slots take camera poses (biggest-first
-     *                 for one slot, left-to-right otherwise); autopilot slots are virtual.
-     *  autopilot OFF: every slot takes a camera pose, left-to-right on screen.
+     * How many slots humans hold. Grows at once; shrinks only after the extra
+     * body has been gone for `lossGraceSec`, so a one-frame dropout does not
+     * hand a slot back to autopilot and make it flicker.
+     */
+    _humanSlotCount(seen, timeSec) {
+        const grace = this.config.smoothing.lossGraceSec;
+        if (seen >= this._humanCount || timeSec - this._humanCountSince > grace) {
+            if (seen !== this._humanCount) this._humanCountSince = timeSec;
+            this._humanCount = seen;
+        }
+        if (seen >= this._humanCount) this._humanCountSince = timeSec;
+        return this._humanCount;
+    }
+
+    /**
+     * Slot assignment policy. Humans always come first:
+     *  - Non-autopilot slots are reserved for humans.
+     *  - With autopilot ON, extra humans take over autopilot slots (lowest id
+     *    first); autopilot only plays the slots no human needs.
+     *  - With autopilot OFF, every slot is a human slot.
+     * Humans are placed left-to-right on screen. If there are more bodies than
+     * slots, the closest ones win.
      */
     _assign(poses, timeSec) {
         const opts = this._extractOpts();
-        const ordered = orderPoses(poses, opts);
-        const virtual = this.autopilotEnabled ? this.autopilot.update(timeSec) : null;
-        const physicalSlots = this.slots.filter(s => !(virtual && virtual.has(s.id)));
-
-        let physicalPoses = ordered;
-        if (virtual && physicalSlots.length < ordered.length) {
-            // Keep the closest (largest) bodies, then restore screen order.
-            const size = p => {
-                const g = extractGesture(p, opts);
-                return g ? -g.depth : 0;
-            };
-            const keep = new Set([...ordered].sort((a, b) => size(a) - size(b)).slice(0, physicalSlots.length));
-            physicalPoses = ordered.filter(p => keep.has(p));
+        let ordered = orderPoses(poses, opts);
+        if (ordered.length > this.slots.length) {
+            const near = p => -extractGesture(p, opts).depth; // smaller = closer
+            const keep = new Set([...ordered].sort((a, b) => near(a) - near(b)).slice(0, this.slots.length));
+            ordered = ordered.filter(p => keep.has(p));
         }
 
-        physicalSlots.forEach((slot, i) => {
-            slot.observe(physicalPoses[i] ? extractGesture(physicalPoses[i], opts) : null, 'physical');
+        const reserved = this.slots.filter(s => !this.autopilotSlotIds.includes(s.id));
+        const takeable = this.slots.filter(s => this.autopilotSlotIds.includes(s.id));
+        let humanSlots;
+        if (this.autopilotEnabled) {
+            const extra = Math.max(0, this._humanSlotCount(ordered.length, timeSec) - reserved.length);
+            humanSlots = [...reserved, ...takeable.slice(0, extra)].sort((a, b) => a.id - b.id);
+        } else {
+            humanSlots = this.slots;
+        }
+
+        humanSlots.forEach((slot, i) => {
+            slot.observe(ordered[i] ? extractGesture(ordered[i], opts) : null, 'physical');
         });
-        if (virtual) virtual.forEach((g, id) => this.slots.find(s => s.id === id).observe(g, 'virtual'));
+
+        if (this.autopilotEnabled) {
+            const virtual = this.autopilot.update(timeSec);
+            this.slots
+                .filter(s => !humanSlots.includes(s) && virtual.has(s.id))
+                .forEach(s => s.observe(virtual.get(s.id), 'virtual'));
+        }
     }
 
     /**

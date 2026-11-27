@@ -15,6 +15,7 @@ Webcam-driven audio-visual instrument, browser-only, zero build. GitHub: `Joseph
 - `PerformanceFrame` – the only thing Visualizer and Listener read. Plain data, no Three.js.
 - `CONFIG` is deep-frozen. Runtime state (view mode, autopilot, mapping mode, camera size) lives in App / VisionSystem.
 - Slot count comes from `CONFIG.slots` only.
+- Humans first: extra people take over autopilot slots; autopilot plays only the slots nobody needs (PerformanceManager._assign).
 
 ## Jo's decisions
 - **TRIANGLE is the canonical name** (the old "Perfume: Lattice Performer" name is retired).
