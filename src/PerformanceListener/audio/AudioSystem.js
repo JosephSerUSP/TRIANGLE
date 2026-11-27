@@ -117,11 +117,11 @@ export class AudioSystem {
             const ch = this.channels[i];
             if (!ctl) return;
             const timbre = ch.status === 'OUTRO' ? ctl.expression * 0.5 : ctl.expression;
-            v.primary.setPan(ctl.pan, time);
-            v.primary.modulate({ timbre }, time);
             // sculpt spreads the pair ±0.3 around the body (voice-leading branch idea).
-            v.pad.setPan(ctl.deterministic ? clamp(ctl.pan - 0.3, -1, 1) : ctl.pan * 0.5, time);
-            if (ctl.deterministic) v.primary.setPan(clamp(ctl.pan + 0.3, -1, 1), time);
+            const spread = ctl.deterministic ? 0.3 : 0;
+            v.primary.setPan(clamp(ctl.pan + spread, -1, 1), time);
+            v.primary.modulate({ timbre }, time);
+            v.pad.setPan(spread ? clamp(ctl.pan - spread, -1, 1) : ctl.pan * 0.5, time);
             v.pad.modulate({ timbre }, time);
             if (ch.status === 'SILENT') return;
             const tr = ctl.transpose;
