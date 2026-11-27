@@ -1,0 +1,37 @@
+import { test } from 'node:test';
+import assert from 'node:assert/strict';
+import { EnsembleSlot } from '../src/PerformanceManager/state/EnsembleSlot.js';
+import { CONFIG } from '../src/core/Config.js';
+import { createRestGesture } from '../src/core/Contracts.js';
+
+const def = CONFIG.slots[0];
+const g = () => { const x = createRestGesture(); x.orientation.yaw = 1; x.depth = -3; return x; };
+
+function run(slot, seconds, dt, gesture) {
+    const n = Math.round(seconds / dt);
+    for (let i = 0; i < n; i++) { slot.observe(gesture, 'physical'); slot.update(dt); }
+}
+
+test('smoothing is frame-rate independent', () => {
+    const a = new EnsembleSlot(def, CONFIG.smoothing), b = new EnsembleSlot(def, CONFIG.smoothing);
+    run(a, 1, 1 / 30, g()); run(b, 1, 1 / 120, g());
+    assert.ok(Math.abs(a.current.orientation.yaw - b.current.orientation.yaw) < 0.02);
+});
+
+test('one-frame dropout does not deactivate the slot', () => {
+    const s = new EnsembleSlot(def, CONFIG.smoothing);
+    run(s, 1, 1 / 60, g());
+    assert.equal(s.active, true);
+    run(s, 1 / 60, 1 / 60, null);
+    assert.equal(s.active, true);
+    run(s, 1, 1 / 60, null);
+    assert.equal(s.active, false);
+});
+
+test('snapshot does not alias internal state', () => {
+    const s = new EnsembleSlot(def, CONFIG.smoothing);
+    run(s, 0.5, 1 / 60, g());
+    const snap = s.snapshot();
+    snap.gesture.orientation.yaw = 99;
+    assert.notEqual(s.current.orientation.yaw, 99);
+});

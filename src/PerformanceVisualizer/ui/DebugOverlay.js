@@ -1,91 +1,86 @@
-// src/ui/DebugOverlay.js
-import { CONFIG } from '../../core/Config.js';
-
 /**
- * Manages the debug overlay canvas.
- * Displays performance metrics and internal state when enabled.
+ * @fileoverview HUD renderer: audio-locked hint, status/metrics text and a
+ * skeleton overlay (view mode 2). Pure output; owns no input listeners.
  */
+
+const EDGES = [
+    ['left_shoulder', 'right_shoulder'], ['left_shoulder', 'left_elbow'], ['left_elbow', 'left_wrist'],
+    ['right_shoulder', 'right_elbow'], ['right_elbow', 'right_wrist'], ['left_shoulder', 'left_hip'],
+    ['right_shoulder', 'right_hip'], ['left_hip', 'right_hip']
+];
+
 export class DebugOverlay {
-    /**
-     * Creates a new DebugOverlay instance.
-     * @param {string} canvasId - The ID of the canvas element.
-     */
-    constructor(canvasId) {
-        this.canvas = document.getElementById(canvasId);
-        if (!this.canvas) {
-            console.error(`DebugOverlay: Canvas with id '${canvasId}' not found.`);
-            return;
-        }
-        this.ctx = this.canvas.getContext('2d');
-        this.resize();
-
-        window.addEventListener('resize', () => this.resize());
-        window.addEventListener('keydown', (e) => {
-            if (e.key === 'd' || e.key === 'D') {
-                CONFIG.viewMode = (CONFIG.viewMode + 1) % 3;
-                CONFIG.debug = (CONFIG.viewMode === 2);
-            }
-            if (e.key === 'a' || e.key === 'A') {
-                CONFIG.enableAutopilot = !CONFIG.enableAutopilot;
-                console.log(`Autopilot: ${CONFIG.enableAutopilot ? 'ON' : 'OFF'}`);
-            }
-        });
+    /** @param {{debugCanvas, statusEl, metricsEl, hintEl}} els */
+    constructor(els) {
+        this.canvas = els.debugCanvas || null;
+        this.ctx = this.canvas ? this.canvas.getContext('2d') : null;
+        this.statusEl = els.statusEl;
+        this.metricsEl = els.metricsEl;
+        this.hintEl = els.hintEl;
     }
 
-    /**
-     * Resizes the canvas to match the window dimensions.
-     */
-    resize() {
+    resize(w, h) {
         if (!this.canvas) return;
-        this.canvas.width = window.innerWidth;
-        this.canvas.height = window.innerHeight;
+        this.canvas.width = w;
+        this.canvas.height = h;
     }
 
     /**
-     * Draws debug information to the canvas.
-     * @param {Array<Object>} poses - The detected poses.
-     * @param {Performer[]} performers - Array of performer states.
+     * @param {import('../../core/Contracts.js').PerformanceFrame} frame
+     * @param {{viewMode:number, audioLocked:boolean, mappingMode:string}} hud
      */
-    draw(poses, performers) {
+    draw(frame, hud) {
+        if (this.hintEl) this.hintEl.style.display = hud.audioLocked ? 'block' : 'none';
         if (!this.ctx) return;
-
         this.ctx.clearRect(0, 0, this.canvas.width, this.canvas.height);
 
-        const statusEl = document.getElementById('status');
-        const metricsEl = document.getElementById('metrics');
+        const show = hud.viewMode === 2;
+        if (this.statusEl) this.statusEl.style.display = show ? 'block' : 'none';
+        if (this.metricsEl) this.metricsEl.style.display = show ? 'block' : 'none';
+        if (!show) return;
 
-        if (!CONFIG.debug) {
-            if (statusEl) statusEl.style.display = 'none';
-            if (metricsEl) metricsEl.style.display = 'none';
-            return;
-        }
+        const physical = frame.slots.filter(s => s.binding === 'physical' && s.active).map(s => `P${s.id}`);
+        this.statusEl.innerText = physical.length
+            ? `TARGET ACQUIRED  (${physical.join(', ')})`
+            : 'SCANNING SECTOR...';
 
-        if (statusEl) {
-            statusEl.style.display = 'block';
-            statusEl.innerText = performers[0].hasPerformer
-                ? 'TARGET ACQUIRED  (P0: Physical)'
-                : 'SCANNING SECTOR...';
-        }
+        let text = `Autopilot: ${frame.autopilotEnabled ? 'ON' : 'OFF'}   Mapping: ${hud.mappingMode}\n`;
+        frame.slots.forEach(s => {
+            const t = s.gesture.triangle;
+            text += `P${s.id} ${s.role.padEnd(8)} ${s.binding.padEnd(8)} ${s.active ? 'ON ' : 'off'} pres ${s.presence.toFixed(2)}\n`;
+            text += `  depth: ${s.gesture.depth.toFixed(2)}  triA: ${t.area.toFixed(3)}  W: ${t.width.toFixed(2)}  H: ${t.height.toFixed(2)}\n`;
+        });
+        this.metricsEl.innerText = text;
 
-        if (metricsEl) {
-            metricsEl.style.display = 'block';
-            let text = '';
-            text += `Autopilot: ${CONFIG.enableAutopilot ? 'ON' : 'OFF'}\n`;
-            performers.forEach((p, idx) => {
-                text += `P${idx} ${p.hasPerformer ? 'ON ' : 'off'}\n`;
-                text += `  depth: ${p.current.depth.toFixed(2)}  bpm: ${p.current.bpmPref.toFixed(1)}\n`;
-                text += `  triA: ${p.triangle.area.toFixed(3)}  W: ${p.triangle.width.toFixed(2)}  H: ${p.triangle.height.toFixed(2)}\n`;
+        this._drawSkeletons(frame.debug);
+    }
+
+    /** Draws raw poses, mirrored to match the canonical view, scaled to cover the screen. */
+    _drawSkeletons(debug) {
+        if (!debug || !debug.cameraSize || !debug.poses) return;
+        const { width: cw, height: ch } = debug.cameraSize;
+        const W = this.canvas.width, H = this.canvas.height;
+        const sx = W / cw, sy = H / ch;
+        const ctx = this.ctx;
+        ctx.strokeStyle = '#88eeee';
+        ctx.fillStyle = '#88eeee';
+        ctx.lineWidth = 2;
+        debug.poses.forEach(pose => {
+            const by = Object.fromEntries(pose.keypoints.map(k => [k.name, k]));
+            const P = k => [W - k.x * sx, k.y * sy];
+            EDGES.forEach(([a, b]) => {
+                const ka = by[a], kb = by[b];
+                if (!ka || !kb || ka.score < 0.3 || kb.score < 0.3) return;
+                ctx.beginPath();
+                ctx.moveTo(...P(ka));
+                ctx.lineTo(...P(kb));
+                ctx.stroke();
             });
-            metricsEl.innerText = text;
-        }
-
-        // Optionally draw keypoints
-        if (poses && poses.length > 0) {
-             this.ctx.save();
-             this.ctx.scale(1, 1);
-             // Note: Mapping keypoints to screen space strictly requires knowing the video scaling,
-             // but for simple debug we can assume full screen or just skip drawing dots for now.
-             this.ctx.restore();
-        }
+            pose.keypoints.forEach(k => {
+                if (k.score < 0.3) return;
+                const [x, y] = P(k);
+                ctx.fillRect(x - 2, y - 2, 4, 4);
+            });
+        });
     }
 }

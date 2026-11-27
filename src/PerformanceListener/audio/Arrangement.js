@@ -1,0 +1,66 @@
+/**
+ * @fileoverview Pure musical logic (no Web Audio): chord stepping, channel
+ * lifecycle and the experimental gesture->music mapping modes. Unit-tested in
+ * tests/arrangement.test.js.
+ */
+import { clamp, lerp } from '../../core/MathUtils.js';
+
+/** Chord index for a bar: changes every 4 bars, bar 0 = first chord. */
+export function chordIndexForBar(bar, progressionLength) {
+    return Math.floor(bar / 4) % progressionLength;
+}
+
+/**
+ * Advances one channel's SILENT/INTRO/MAIN/OUTRO state. Mutates `ch`.
+ * `active` must already be debounced upstream (EnsembleSlot).
+ */
+export function stepChannel(ch, active, now, introSec, outroSec) {
+    if (active) {
+        if (ch.status === 'SILENT') { ch.status = 'INTRO'; ch.startTime = now; }
+        // Coming back during OUTRO resumes where it left off instead of a fresh intro.
+        else if (ch.status === 'OUTRO') { ch.status = ch.wasMain ? 'MAIN' : 'INTRO'; }
+        if (ch.status === 'INTRO' && now - ch.startTime > introSec) ch.status = 'MAIN';
+        ch.wasMain = ch.status === 'MAIN';
+    } else {
+        if (ch.status === 'MAIN' || ch.status === 'INTRO') { ch.status = 'OUTRO'; ch.leaveTime = now; }
+        if (ch.status === 'OUTRO' && now - ch.leaveTime > outroSec) { ch.status = 'SILENT'; ch.wasMain = false; }
+    }
+    return ch;
+}
+
+export function createChannel() {
+    return { status: 'SILENT', startTime: 0, leaveTime: 0, wasMain: false };
+}
+
+/**
+ * Gesture -> per-voice control values for one slot.
+ * @param {import('../../core/Contracts.js').SlotSnapshot} slot
+ * @param {Object} audioCfg CONFIG.audio
+ * @param {string} mode  'canon' | 'tempo' | 'harmony'
+ */
+export function voiceControls(slot, audioCfg, mode) {
+    const t = slot.gesture.triangle;
+    const height = clamp(t.height, 0, 1);
+    const width = clamp(t.width, 0, 1);
+    const ctl = {
+        active: slot.active,
+        expression: height,
+        pan: clamp(slot.gesture.orientation.yaw / (Math.PI / 2), -1, 1),
+        transpose: 0,
+        width
+    };
+    if (mode === 'harmony' && t.visible) {
+        const iv = audioCfg.harmonyIntervals;
+        ctl.transpose = iv[Math.min(iv.length - 1, Math.floor(height * iv.length))];
+    }
+    return ctl;
+}
+
+/** Target tempo for the ensemble. Wide arms = slow (README's original intent). */
+export function targetTempo(controls, audioCfg, mode) {
+    if (mode === 'canon') return audioCfg.baseTempo;
+    const active = controls.filter(c => c.active);
+    if (active.length === 0) return audioCfg.baseTempo;
+    const w = active.reduce((s, c) => s + c.width, 0) / active.length;
+    return lerp(audioCfg.bpmMax, audioCfg.bpmMin, w);
+}

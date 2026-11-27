@@ -1,151 +1,88 @@
-// src/systems/AudioSystem.js
-import * as THREE from 'three';
-import { CONFIG } from '../../core/Config.js';
-import { CHORD_PROGRESSION, SCALES } from './MusicTheory.js';
-import { PulseBass, StringPad, PluckSynth, ArpSynth, KickDrum } from './Instruments.js';
-
 /**
- * Manages audio synthesis for the application.
- * Uses the Web Audio API to create voices and effects.
+ * @fileoverview Web Audio engine: lookahead scheduler, one voice pair per slot
+ * (chosen by slot role), kick, mix bus. Musical decisions live in
+ * Arrangement.js; this file only turns them into scheduled notes.
  */
+import { clamp } from '../../core/MathUtils.js';
+import { CHORD_PROGRESSION, CHORD_TONE } from './MusicTheory.js';
+import { PulseBass, StringPad, PluckSynth, ArpSynth, KickDrum } from './Instruments.js';
+import {
+    chordIndexForBar, stepChannel, createChannel, voiceControls, targetTempo
+} from './Arrangement.js';
+
+const PRIMARY = { bass: PulseBass, ostinato: PluckSynth, arp: ArpSynth };
+
 export class AudioSystem {
-    constructor() {
+    /** @param {Object} audioCfg CONFIG.audio */
+    constructor(audioCfg) {
+        this.cfg = audioCfg;
         this.ctx = null;
         this.isReady = false;
+        this.mappingMode = 'canon';
 
-        this.masterGain = null;
-        this.compressor = null;
-        this.reverb = null;
-
-        // Performers' instruments: Array of { inst1, inst2 }
-        this.instruments = [];
-
-        // Sequencer State
         this.isPlaying = false;
-        this.currentSixteenthNote = 0;
-        this.barCounter = 0; // Count bars to handle longer loops
-        this.nextNoteTime = 0.0;
-        this.tempo = 120.0;
-        this.lookahead = 25.0; // ms
-        this.scheduleAheadTime = 0.1; // s
+        this.step = 0;           // 16th within bar
+        this.bar = 0;
+        this.nextNoteTime = 0;
+        this.tempo = audioCfg.baseTempo;
+        this.lookaheadMs = 25;
+        this.scheduleAheadTime = 0.1;
 
-        this.chordIndex = 0;
-        this.progression = CHORD_PROGRESSION;
-
-        // Bossa Clave (3-2) in 16th notes: X..X..X...X.X...
-        // 1 represents a hit
-        this.clavePattern = [1, 0, 0, 1, 0, 0, 1, 0, 0, 0, 1, 0, 1, 0, 0, 0];
-
-        // Bass pattern (dotted quarter + eighth feel / driving)
-        // 1 = root, 2 = fifth
         this.bassPattern = [1, 0, 0, 1, 0, 0, 2, 0, 1, 0, 0, 1, 0, 0, 2, 0];
-
-        // Kick Pattern (4-on-the-floor)
         this.kickPattern = [1, 0, 0, 0, 1, 0, 0, 0, 1, 0, 0, 0, 1, 0, 0, 0];
+        this.ostinatoPattern = [0, 2, 4, 7, 4, 2, 0, 2, 0, 2, 4, 7, 4, 2, 0, 2];
+        this.kickIntensity = 0;
 
-        this.kickIntensity = 0.0;
-
-        // Ostinato Pattern (Performer B)
-        this.ostinatoPattern = [0, 2, 4, 7, 4, 2, 0, 2, 0, 2, 4, 7, 4, 2, 0, 2]; // Scale degrees
-
-        // Channel state tracking for Intro/Outro logic
-        // Status: 'SILENT', 'INTRO', 'MAIN', 'OUTRO'
-        this.channelStates = [
-            { status: 'SILENT', startTime: 0, leaveTime: 0 },
-            { status: 'SILENT', startTime: 0, leaveTime: 0 },
-            { status: 'SILENT', startTime: 0, leaveTime: 0 }
-        ];
+        this.voices = [];
+        this.channels = [];
+        this.controls = [];
     }
 
-    /**
-     * Initializes the AudioContext, master effects chain, and all instruments.
-     * This must be called after a user interaction gesture.
-     * @param {number} performerCount - The number of performers to initialize instruments for.
-     * @returns {Promise<void>}
-     */
-    async init(performerCount) {
-        const AudioContext = window.AudioContext || window.webkitAudioContext;
-        this.ctx = new AudioContext();
+    /** @param {string[]} roles  one per slot, from CONFIG.slots */
+    async init(roles) {
+        const AC = window.AudioContext || window.webkitAudioContext;
+        this.ctx = new AC();
+        const mix = this.cfg.mix;
 
-        // Master Chain: Compress -> Reverb -> Master
         this.compressor = this.ctx.createDynamicsCompressor();
         this.compressor.threshold.value = -24;
         this.compressor.ratio.value = 12;
-
         this.masterGain = this.ctx.createGain();
-        this.masterGain.gain.value = 0.8;
-
-        // Simple convolution reverb
-        this.reverb = this.ctx.createConvolver();
-        this._createReverbImpulse();
-
-        // Routing
-        // Instruments -> Compressor -> Master
+        this.masterGain.gain.value = mix.master;
         this.compressor.connect(this.masterGain);
         this.masterGain.connect(this.ctx.destination);
 
-        // Reverb Send
+        this.reverb = this.ctx.createConvolver();
+        this._createReverbImpulse();
         this.reverbGain = this.ctx.createGain();
-        this.reverbGain.gain.value = 0.3;
+        this.reverbGain.gain.value = mix.reverb;
         this.reverb.connect(this.reverbGain);
         this.reverbGain.connect(this.masterGain);
 
-        // Performer Setup
-        // A (0): Bass + String
-        // B (1): Ostinato + String
-        // C (2): Arp + String
-
-        this.instruments = [];
-
-        // P0: Bass + String
-        this.instruments.push({
-            primary: new PulseBass(this.ctx, this.compressor),
-            secondary: new StringPad(this.ctx, this.reverb)
-        });
-
-        // P1: Ostinato + String
-        this.instruments.push({
-            primary: new PluckSynth(this.ctx, this.compressor),
-            secondary: new StringPad(this.ctx, this.reverb)
-        });
-
-        // P2: Arp + String
-        this.instruments.push({
-            primary: new ArpSynth(this.ctx, this.compressor),
-            secondary: new StringPad(this.ctx, this.reverb)
-        });
-
-        // Kick Drum
-        this.kickDrum = new KickDrum(this.ctx, this.compressor);
-
-        // Connect all secondary strings to compressor too for volume control
-        this.instruments.forEach(inst => {
-            inst.secondary.output.connect(this.compressor);
-        });
-
+        this.voices = roles.map(role => ({
+            role,
+            primary: new (PRIMARY[role] || ArpSynth)(this.ctx, this.compressor, { level: mix[role] ?? mix.arp }),
+            pad: new StringPad(this.ctx, this.compressor, {
+                level: mix.pad, reverb: this.reverb, send: mix.padReverbSend
+            })
+        }));
+        this.channels = roles.map(createChannel);
+        this.kickDrum = new KickDrum(this.ctx, this.compressor, { level: mix.kick });
         this.isReady = true;
     }
 
     _createReverbImpulse() {
-        const rate = this.ctx.sampleRate;
-        const length = rate * 2.0; // 2 seconds
-        const decay = 2.0;
+        const rate = this.ctx.sampleRate, length = rate * 2;
         const impulse = this.ctx.createBuffer(2, length, rate);
-        const left = impulse.getChannelData(0);
-        const right = impulse.getChannelData(1);
-
-        for (let i = 0; i < length; i++) {
-            const n = length - i;
-            left[i] = (Math.random() * 2 - 1) * Math.pow(n / length, decay);
-            right[i] = (Math.random() * 2 - 1) * Math.pow(n / length, decay);
+        for (let c = 0; c < 2; c++) {
+            const d = impulse.getChannelData(c);
+            for (let i = 0; i < length; i++) d[i] = (Math.random() * 2 - 1) * Math.pow((length - i) / length, 2);
         }
         this.reverb.buffer = impulse;
     }
 
     resume() {
-        if (this.ctx && this.ctx.state === 'suspended') {
-            this.ctx.resume();
-        }
+        if (this.ctx.state === 'suspended') this.ctx.resume();
         if (!this.isPlaying) {
             this.isPlaying = true;
             this.nextNoteTime = this.ctx.currentTime + 0.1;
@@ -155,250 +92,103 @@ export class AudioSystem {
 
     _scheduler() {
         if (!this.isPlaying) return;
-
-        // While there are notes that will play within the scheduleAheadTime
-        while (this.nextNoteTime < this.ctx.currentTime + this.scheduleAheadTime) {
-            this._scheduleNote(this.currentSixteenthNote, this.nextNoteTime);
-            this._advanceNote();
+        const horizon = this.ctx.currentTime + this.scheduleAheadTime;
+        // Tab-resume guard: if we fell far behind, drop the backlog instead of bursting it.
+        const maxLag = this.cfg.maxCatchUpSteps * (15 / this.tempo);
+        if (this.ctx.currentTime - this.nextNoteTime > maxLag) {
+            this.nextNoteTime = this.ctx.currentTime + 0.05;
         }
-
-        setTimeout(() => this._scheduler(), this.lookahead);
+        while (this.nextNoteTime < horizon) {
+            this._scheduleStep(this.step, this.nextNoteTime);
+            this.nextNoteTime += 15 / this.tempo; // a 16th note
+            if (++this.step === 16) { this.step = 0; this.bar++; }
+        }
+        setTimeout(() => this._scheduler(), this.lookaheadMs);
     }
 
-    _advanceNote() {
-        const secondsPerBeat = 60.0 / this.tempo;
-        this.nextNoteTime += 0.25 * secondsPerBeat; // 16th notes
-        this.currentSixteenthNote++;
-        if (this.currentSixteenthNote === 16) {
-            this.currentSixteenthNote = 0;
-            this.barCounter++;
-        }
+    _freq(semitones, octave) {
+        return this.cfg.rootFreq * octave * Math.pow(2, semitones / 12);
     }
 
-    /**
-     * Schedules all musical events for a specific 16th note time slot.
-     * This is the core of the sequencer logic.
-     * @private
-     * @param {number} beatNumber - The current 16th note index (0-15).
-     * @param {number} time - The precise AudioContext time to schedule the event.
-     */
-    _scheduleNote(beatNumber, time) {
-        // Change chord every 4 bars
-        if (beatNumber === 0 && this.barCounter % 4 === 0) {
-            this.chordIndex = (this.chordIndex + 1) % this.progression.length;
-        }
+    _scheduleStep(beat, time) {
+        const chord = CHORD_PROGRESSION[chordIndexForBar(this.bar, CHORD_PROGRESSION.length)];
+        const cycle = Math.floor(this.bar / 4);
 
-        const currentChord = this.progression[this.chordIndex];
-        const baseFreq = CONFIG.audio.rootFreq;
-        const cycleIndex = Math.floor(this.barCounter / 4);
+        if (this.kickIntensity > 0.001 && this.kickPattern[beat]) this.kickDrum.playNote(time, this.kickIntensity);
 
-        // --- Kick Drum ---
-        if (this.kickIntensity > 0.001) {
-            if (this.kickPattern[beatNumber]) {
-                this.kickDrum.playNote(time, this.kickIntensity);
-            }
-        }
+        this.voices.forEach((v, i) => {
+            const ctl = this.controls[i];
+            const ch = this.channels[i];
+            if (!ctl) return;
+            const timbre = ch.status === 'OUTRO' ? ctl.expression * 0.5 : ctl.expression;
+            v.primary.setPan(ctl.pan, time);
+            v.primary.modulate({ timbre }, time);
+            v.pad.setPan(ctl.pan * 0.5, time);
+            v.pad.modulate({ timbre }, time);
+            if (ch.status === 'SILENT') return;
+            const tr = ctl.transpose;
 
-        // --- Performer State Loop ---
-        for (let i = 0; i < 3; i++) {
-            if (!this._performerStates || !this._performerStates[i]) continue;
+            if (v.role === 'bass') {
+                let note = null;
+                if (ch.status === 'INTRO') { if (beat === 0) note = 1; }
+                else if (ch.status === 'OUTRO') { if (beat === 0 || beat === 8) note = 1; }
+                else if (ctl.expression > 0.8) { if (beat % 2 === 0) note = 1; }
+                else if (this.bassPattern[beat] > 0) note = this.bassPattern[beat];
 
-            const pState = this._performerStates[i];
-            const channel = this.channelStates[i];
-            const inst = this.instruments[i];
-
-            // Modulation (Timbre/Pan)
-            // If OUTRO, lower timbre/cutoff
-            let timbre = pState.expression;
-            if (channel.status === 'OUTRO') {
-                timbre *= 0.5; // Darker
-            }
-
-            inst.primary.setPan(pState.pan);
-            inst.primary.modulate({ timbre: timbre });
-            inst.secondary.setPan(pState.pan * 0.5);
-            inst.secondary.modulate({ timbre: timbre });
-
-            // If SILENT, skip note generation
-            if (channel.status === 'SILENT') continue;
-
-            // --- Pattern Logic ---
-
-            // Performer A: Bass + String
-            if (i === 0) {
-                // Bass Variation Logic
-                let bassNoteToPlay = null;
-
-                // INTRO: Only downbeat (Beat 0)
-                if (channel.status === 'INTRO') {
-                    if (beatNumber === 0) bassNoteToPlay = 1; // Root
-                }
-                // OUTRO: Sparse, maybe just root on downbeat or every 2 beats
-                else if (channel.status === 'OUTRO') {
-                    if (beatNumber === 0 || beatNumber === 8) bassNoteToPlay = 1;
-                }
-                // MAIN: Full pattern + Variations
-                else {
-                    // Check for forced driving expression
-                    if (pState.expression > 0.8) {
-                        // Driving 8th notes
-                         if (beatNumber % 2 === 0) bassNoteToPlay = 1;
-                    } else {
-                        // Standard Pattern
-                        const step = this.bassPattern[beatNumber];
-                        if (step > 0) bassNoteToPlay = step;
+                if (note) {
+                    let interval = note === 1 ? chord.bass : chord.bass + 7;
+                    if (ch.status === 'MAIN') {
+                        if (cycle % 4 === 1 && note === 1) interval = chord.notes[CHORD_TONE.third] - 12; // 1st inversion
+                        else if (cycle % 4 === 3) interval = 0; // D pedal
                     }
+                    v.primary.playNote(this._freq(interval, 1), time, 0.2, 0.5 + timbre * 0.5);
                 }
-
-                if (bassNoteToPlay) {
-                    // Harmonic Variation (Recontextualization)
-                    // Cycle % 4 == 1 -> Inversion (3rd)
-                    // Cycle % 4 == 3 -> Pedal Point (Key Root)
-                    let interval = (bassNoteToPlay === 1 ? currentChord.bass : currentChord.bass + 7);
-
-                    if (channel.status === 'MAIN') {
-                        if (cycleIndex % 4 === 1 && bassNoteToPlay === 1) {
-                            // Inversion: Play the 3rd of the chord (index 2 in notes)
-                            // But currentChord.bass is offset.
-                            // currentChord.notes[2] is the interval for the 3rd relative to key.
-                            interval = currentChord.notes[2] - 12; // octave down
-                        } else if (cycleIndex % 4 === 3) {
-                            // Pedal Point on D (0)
-                            interval = 0; // D1
-                        }
-                    }
-
-                    const freq = baseFreq * Math.pow(2, interval / 12);
-                    const vel = 0.5 + (timbre * 0.5);
-                    inst.primary.playNote(freq, time, 0.2, vel);
+                const padBars = ch.status === 'MAIN' ? 2 : 4;
+                if (beat === 0 && this.bar % padBars === 0) {
+                    v.pad.playNote(this._freq(chord.notes[CHORD_TONE.root] + tr, 2), time, 4.0, 0.4 * timbre);
                 }
-
-                // String Pad
-                // Retrigger occasionally
-                const padTriggerBeat = 0;
-                // Intro/Outro: longer pads
-                const padIntervalBars = (channel.status === 'MAIN') ? 2 : 4;
-
-                if (beatNumber === padTriggerBeat && this.barCounter % padIntervalBars === 0) {
-                     // Play single note (Root) instead of full chord
-                     const n = currentChord.notes[0];
-                     const f = baseFreq * 2 * Math.pow(2, n/12);
-                     inst.secondary.playNote(f, time, 4.0, 0.4 * timbre);
-                }
-            }
-
-            // Performer B: Ostinato + String
-            else if (i === 1) {
-                const scaleIndex = this.ostinatoPattern[beatNumber];
-                // Density based on state
-                let density = 0.5;
-                if (channel.status === 'INTRO') density = 0.2;
-                if (channel.status === 'OUTRO') density = 0.1;
-                if (channel.status === 'MAIN') density = 0.2 + pState.expression * 0.8;
-
-                if (scaleIndex !== undefined && Math.random() < density) {
-                    const noteIndex = scaleIndex % currentChord.notes.length;
-                    const interval = currentChord.notes[noteIndex];
-                    const f = baseFreq * 4 * Math.pow(2, interval/12);
-                    const vel = 0.3 + (timbre * 0.6);
-                    inst.primary.playNote(f, time, 0.1, vel);
-                }
-
-                // Pad
-                if (beatNumber === 0 && this.barCounter % 2 === 0) {
-                     const n = currentChord.notes[2];
-                     const f = baseFreq * 4 * Math.pow(2, n/12);
-                     inst.secondary.playNote(f, time, 4.0, 0.3 * timbre);
-                }
-            }
-
-            // Performer C: Arpeggio + String
-            else if (i === 2) {
-                 let density = 0.5;
-                if (channel.status === 'INTRO') density = 0.1;
-                if (channel.status === 'OUTRO') density = 0.05;
-                if (channel.status === 'MAIN') density = 0.1 + pState.expression * 0.9;
-
+            } else if (v.role === 'ostinato') {
+                const density = { INTRO: 0.2, OUTRO: 0.1, MAIN: 0.2 + ctl.expression * 0.8 }[ch.status];
                 if (Math.random() < density) {
-                    const arpIndex = beatNumber % currentChord.notes.length;
-                    const interval = currentChord.notes[arpIndex];
-                    const f = baseFreq * 4 * Math.pow(2, interval/12);
-                    const vel = (0.3 + (timbre * 0.5)) * (0.8 + Math.random() * 0.4);
-                    inst.primary.playNote(f, time, 0.1, vel);
+                    const n = chord.notes[this.ostinatoPattern[beat] % chord.notes.length];
+                    v.primary.playNote(this._freq(n + tr, 4), time, 0.1, 0.3 + timbre * 0.6);
                 }
-
-                // String
-                 if (beatNumber === 8 && this.barCounter % 2 === 0) {
-                     const n = currentChord.notes[1];
-                     const f = baseFreq * 2 * Math.pow(2, n/12);
-                     inst.secondary.playNote(f, time, 4.0, 0.3 * timbre);
-                }
-            }
-        }
-    }
-
-    /**
-     * Updates internal state based on performers.
-     * @param {Performer[]} performers
-     */
-    update(performers) {
-        if (!this.isReady) return;
-
-        // Cache simplified state for the scheduler
-        this._performerStates = performers.map(p => ({
-            active: p.hasPerformer,
-            expression: THREE.MathUtils.clamp(p.triangle.height || 0.5, 0.0, 1.0),
-            pan: THREE.MathUtils.clamp((p.current.yaw || 0) / (Math.PI / 2), -1, 1)
-        }));
-
-        const now = this.ctx.currentTime;
-        const INTRO_DURATION = 8.0; // 8 seconds (approx 4 bars at 120bpm)
-        const OUTRO_DURATION = 4.0; // 4 seconds linger
-
-        // Calculate Kick Intensity
-        // Silent < 2
-        // Timid = 2 (0.4)
-        // Pounding = 3 (1.0)
-        const activeCount = this._performerStates.filter(p => p.active).length;
-        let targetKick = 0.0;
-        if (activeCount === 2) targetKick = 0.4;
-        if (activeCount >= 3) targetKick = 1.0;
-
-        // Smooth transition
-        this.kickIntensity += (targetKick - this.kickIntensity) * 0.05;
-
-        // State Machine Update
-        for (let i = 0; i < 3; i++) {
-            const p = this._performerStates[i];
-            const channel = this.channelStates[i];
-
-            if (p.active) {
-                // If previously silent or outro, start Intro
-                if (channel.status === 'SILENT' || channel.status === 'OUTRO') {
-                    channel.status = 'INTRO';
-                    channel.startTime = now;
-                }
-
-                // Check Intro -> Main transition
-                if (channel.status === 'INTRO') {
-                    if (now - channel.startTime > INTRO_DURATION) {
-                        channel.status = 'MAIN';
-                    }
+                if (beat === 0 && this.bar % 2 === 0) {
+                    v.pad.playNote(this._freq(chord.notes[CHORD_TONE.fifth] + tr, 4), time, 4.0, 0.3 * timbre);
                 }
             } else {
-                // Performer gone
-                if (channel.status === 'MAIN' || channel.status === 'INTRO') {
-                    channel.status = 'OUTRO';
-                    channel.leaveTime = now;
+                const density = { INTRO: 0.1, OUTRO: 0.05, MAIN: 0.1 + ctl.expression * 0.9 }[ch.status];
+                if (Math.random() < density) {
+                    const n = chord.notes[beat % chord.notes.length];
+                    const vel = (0.3 + timbre * 0.5) * (0.8 + Math.random() * 0.4);
+                    v.primary.playNote(this._freq(n + tr, 4), time, 0.1, vel);
                 }
-
-                // Check Outro -> Silent
-                if (channel.status === 'OUTRO') {
-                    if (now - channel.leaveTime > OUTRO_DURATION) {
-                        channel.status = 'SILENT';
-                    }
+                if (beat === 8 && this.bar % 2 === 0) {
+                    v.pad.playNote(this._freq(chord.notes[CHORD_TONE.third] + tr, 2), time, 4.0, 0.3 * timbre);
                 }
             }
-        }
+        });
+    }
+
+    /**
+     * @param {import('../../core/Contracts.js').PerformanceFrame} frame
+     */
+    update(frame) {
+        if (!this.isReady) return;
+        this.controls = frame.slots.map(s => voiceControls(s, this.cfg, this.mappingMode));
+
+        const now = this.ctx.currentTime;
+        this.channels.forEach((ch, i) => {
+            const c = this.controls[i];
+            stepChannel(ch, !!(c && c.active), now, this.cfg.introSec, this.cfg.outroSec);
+        });
+
+        const k = 1 - Math.exp(-3 * frame.dtSec);
+        const activeCount = this.controls.filter(c => c.active).length;
+        const targetKick = activeCount >= 3 ? 1.0 : activeCount === 2 ? 0.4 : 0;
+        this.kickIntensity += (targetKick - this.kickIntensity) * k;
+
+        const bpm = targetTempo(this.controls, this.cfg, this.mappingMode);
+        this.tempo = clamp(this.tempo + (bpm - this.tempo) * (1 - Math.exp(-0.5 * frame.dtSec)), 40, 200);
     }
 }

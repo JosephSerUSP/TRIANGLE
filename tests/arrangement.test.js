@@ -1,0 +1,45 @@
+import { test } from 'node:test';
+import assert from 'node:assert/strict';
+import { chordIndexForBar, stepChannel, createChannel, voiceControls, targetTempo } from '../src/PerformanceListener/audio/Arrangement.js';
+import { CHORD_PROGRESSION, CHORD_TONE } from '../src/PerformanceListener/audio/MusicTheory.js';
+import { CONFIG } from '../src/core/Config.js';
+import { createRestGesture } from '../src/core/Contracts.js';
+
+test('first chord plays first; changes every 4 bars', () => {
+    assert.equal(chordIndexForBar(0, 4), 0);
+    assert.equal(chordIndexForBar(3, 4), 0);
+    assert.equal(chordIndexForBar(4, 4), 1);
+    assert.equal(chordIndexForBar(16, 4), 0);
+});
+
+test('CHORD_TONE.third really is the third', () => {
+    const d = CHORD_PROGRESSION[0];
+    assert.equal(d.notes[CHORD_TONE.third] - d.notes[CHORD_TONE.root], 4);
+});
+
+test('lifecycle: intro -> main -> outro; return during outro resumes main; then silent', () => {
+    const ch = createChannel();
+    stepChannel(ch, true, 0, 8, 4); assert.equal(ch.status, 'INTRO');
+    stepChannel(ch, true, 9, 8, 4); assert.equal(ch.status, 'MAIN');
+    stepChannel(ch, false, 10, 8, 4); assert.equal(ch.status, 'OUTRO');
+    stepChannel(ch, true, 11, 8, 4); assert.equal(ch.status, 'MAIN');
+    stepChannel(ch, false, 12, 8, 4); stepChannel(ch, false, 17, 8, 4); assert.equal(ch.status, 'SILENT');
+});
+
+const snap = (w, h, active = true) => {
+    const g = createRestGesture();
+    Object.assign(g.triangle, { visible: true, width: w, height: h });
+    return { active, gesture: g };
+};
+
+test('expression 0 is preserved (no falsy-zero fallback)', () => {
+    assert.equal(voiceControls(snap(0.5, 0), CONFIG.audio, 'canon').expression, 0);
+});
+
+test('mapping modes', () => {
+    const wide = [voiceControls(snap(1, 0.9), CONFIG.audio, 'tempo')];
+    assert.equal(targetTempo(wide, CONFIG.audio, 'canon'), CONFIG.audio.baseTempo);
+    assert.equal(targetTempo(wide, CONFIG.audio, 'tempo'), CONFIG.audio.bpmMin);
+    assert.equal(voiceControls(snap(0.5, 0.9), CONFIG.audio, 'canon').transpose, 0);
+    assert.ok(voiceControls(snap(0.5, 0.9), CONFIG.audio, 'harmony').transpose > 0);
+});

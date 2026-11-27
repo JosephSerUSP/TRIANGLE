@@ -1,3 +1,8 @@
+/**
+ * @fileoverview PerformanceVisualizer: pure visual projection of a
+ * PerformanceFrame onto WebGL + HUD. Receives DOM elements by injection and
+ * owns no global input listeners.
+ */
 import * as THREE from 'three';
 import * as TWEEN from '@tweenjs/tween.js';
 import { LatticeViewport } from './graphics/LatticeViewport.js';
@@ -5,97 +10,66 @@ import { MaskLayer } from './graphics/MaskLayer.js';
 import { DynamicLayout } from './layout/DynamicLayout.js';
 import { DebugOverlay } from './ui/DebugOverlay.js';
 
-/**
- * Manages the visual output of the performance.
- * Responsible for:
- * 1. Rendering the 3D scene (LatticeViewports).
- * 2. Managing the layout of viewports based on performer state.
- * 3. Drawing the Debug Overlay.
- */
 export class PerformanceVisualizer {
     /**
-     * Creates an instance of PerformanceVisualizer.
-     * @param {import('../PerformanceManager/state/Performer.js').Performer[]} initialPerformers - An array of performers used to initialize the viewports.
+     * @param {Object} config  CONFIG
+     * @param {{container:HTMLElement, debugCanvas:HTMLCanvasElement,
+     *          statusEl:HTMLElement, metricsEl:HTMLElement, hintEl:HTMLElement}} els
      */
-    constructor(initialPerformers) {
-        this.renderer = new THREE.WebGLRenderer({ antialias: true, alpha: false });
+    constructor(config, els) {
+        this.config = config;
+        this.renderer = new THREE.WebGLRenderer({ antialias: true, alpha: false, stencil: true });
         this.renderer.setPixelRatio(Math.min(window.devicePixelRatio, 2));
-        this.renderer.setSize(window.innerWidth, window.innerHeight);
-
-        // Disable autoClear to allow manual management of render passes (Mask -> Content)
         this.renderer.autoClear = false;
+        if (els.container) els.container.appendChild(this.renderer.domElement);
 
-        const container = document.getElementById('canvas-container');
-        if (container) {
-            container.appendChild(this.renderer.domElement);
-        }
-
-        window.addEventListener('resize', () => {
-            this.renderer.setSize(window.innerWidth, window.innerHeight);
-        });
-
-        // Initialize viewports corresponding to performers
-        this.viewports = initialPerformers.map(
-            p => new LatticeViewport(p.color.getHex())
-        );
-
-        // Initialize components
+        this.viewports = config.slots.map(s => new LatticeViewport(s.colorHex, config.visual));
         this.maskLayer = new MaskLayer();
-        this.layoutSystem = new DynamicLayout();
-        this.debug = new DebugOverlay('debug-layer');
+        this.layoutSystem = new DynamicLayout(config.layout);
+        this.debug = new DebugOverlay(els);
+        this.viewMode = 0;
+        this.audioLocked = true;
+
+        this.resize(window.innerWidth, window.innerHeight);
     }
 
-    /**
-     * Updates the visual output.
-     * @param {Object} performanceData - { performers, poses }
-     */
-    update({ performers, poses }) {
-        // Update Tweens
-        TWEEN.update();
+    setViewMode(mode) { this.viewMode = mode; }
+    setAudioLocked(locked) { this.audioLocked = locked; }
 
-        // Render Graphics
-        this._renderViewports(performers);
-
-        // Draw Debug Overlay
-        this.debug.draw(poses, performers);
-    }
-
-    /**
-     * Renders all active viewports to the screen.
-     * @private
-     * @param {Performer[]} performers
-     */
-    _renderViewports(performers) {
-        const width = window.innerWidth;
-        const height = window.innerHeight;
-
+    resize(width, height) {
+        this.width = width;
+        this.height = height;
         this.renderer.setSize(width, height);
-        // Clear screen before rendering (Color, Depth, Stencil)
+        this.debug.resize(width, height);
+    }
+
+    /**
+     * @param {import('../core/Contracts.js').PerformanceFrame} frame
+     * @param {{mappingMode:string}} extra  HUD-only info
+     */
+    update(frame, extra = {}) {
+        TWEEN.update();
+        this._renderViewports(frame.slots);
+        this.debug.draw(frame, {
+            viewMode: this.viewMode,
+            audioLocked: this.audioLocked,
+            mappingMode: extra.mappingMode
+        });
+    }
+
+    _renderViewports(slots) {
+        const { width, height } = this;
         this.renderer.clear();
-
-        // Calculate layout
-        const layout = this.layoutSystem.calculate(width, height, performers);
-
-        layout.forEach(item => {
-            const { index, rect, corners } = item;
-
-            // 1. Prepare Stencil Mask
-            this.renderer.clearStencil(); // Clear stencil for this viewport
-
+        const layout = this.layoutSystem.calculate(width, height, slots);
+        layout.forEach(({ index, rect, corners }) => {
+            this.renderer.clearStencil();
             this.renderer.setScissor(rect.x, rect.y, rect.width, rect.height);
-            this.renderer.setViewport(0, 0, width, height); // Viewport for mask is full screen (NDC)
+            this.renderer.setViewport(0, 0, width, height);
             this.renderer.setScissorTest(true);
-
-            // Update and render the mask
             this.maskLayer.update(corners, width, height);
             this.maskLayer.render(this.renderer);
-
-            // 2. Render Content
-            // Render the viewport, which will test against the stencil buffer
-            this.viewports[index].render(this.renderer, rect, performers[index]);
+            this.viewports[index].render(this.renderer, rect, slots[index], this.viewMode >= 1);
         });
-
-        // Disable scissor test after rendering
         this.renderer.setScissorTest(false);
     }
 }

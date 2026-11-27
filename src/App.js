@@ -1,51 +1,84 @@
+/**
+ * @fileoverview AppController / composition root. Owns DOM lookup, keyboard
+ * commands, audio unlock, resize and the render loop. Runtime state that used
+ * to live in mutable CONFIG (view mode, autopilot, mapping mode) lives here.
+ *
+ * Keys: D = cycle view mode, A = toggle autopilot, M = cycle audio mapping mode.
+ */
+import { CONFIG } from './core/Config.js';
 import { PerformanceManager } from './PerformanceManager/index.js';
+import { VisionSystem } from './PerformanceManager/systems/VisionSystem.js';
 import { PerformanceVisualizer } from './PerformanceVisualizer/index.js';
 import { PerformanceListener } from './PerformanceListener/index.js';
 
-/**
- * Main application class.
- * Orchestrates the modular systems:
- * 1. Performance Manager (Input/State)
- * 2. Performance Visualizer (Graphics Output)
- * 3. Performance Listener (Audio Output)
- */
 export class App {
-    /**
-     * Creates a new App instance and wires up the modules.
-     */
-    constructor() {
-        // --- 1. Initialize Modules ---
-        this.manager = new PerformanceManager();
-        this.visualizer = new PerformanceVisualizer(this.manager.performers);
-        this.listener = new PerformanceListener();
+    /** @param {Document} doc */
+    constructor(doc = document) {
+        this.config = CONFIG;
+        this.vision = new VisionSystem(doc.getElementById('video'), CONFIG.vision);
+        this.manager = new PerformanceManager(CONFIG, this.vision);
+        this.visualizer = new PerformanceVisualizer(CONFIG, {
+            container: doc.getElementById('canvas-container'),
+            debugCanvas: doc.getElementById('debug-layer'),
+            statusEl: doc.getElementById('status'),
+            metricsEl: doc.getElementById('metrics'),
+            hintEl: doc.getElementById('audio-hint')
+        });
+        this.listener = new PerformanceListener(CONFIG);
 
-        // Start initialization
+        this.viewMode = CONFIG.defaults.viewMode;
+        this.visualizer.setViewMode(this.viewMode);
+        this.listener.setMappingMode(CONFIG.defaults.mappingMode);
+
+        this._bindInput();
+        this._lastMs = null;
         this._init();
     }
 
-    /**
-     * Initializes the manager and starts the main loop.
-     * @private
-     * @async
-     */
-    async _init() {
-        await this.manager.init();
-        this.loop();
+    _bindInput() {
+        const unlock = () => {
+            this.listener.unlock().then(() => this.visualizer.setAudioLocked(false));
+        };
+        window.addEventListener('pointerdown', unlock);
+        window.addEventListener('touchstart', unlock);
+
+        window.addEventListener('keydown', (e) => {
+            unlock();
+            const k = e.key.toLowerCase();
+            if (k === 'd') {
+                this.viewMode = (this.viewMode + 1) % 3;
+                this.visualizer.setViewMode(this.viewMode);
+            } else if (k === 'a') {
+                this.manager.setAutopilot(!this.manager.autopilotEnabled);
+            } else if (k === 'm') {
+                const modes = CONFIG.audio.mappingModes;
+                const next = modes[(modes.indexOf(this.listener.mappingMode) + 1) % modes.length];
+                this.listener.setMappingMode(next);
+            }
+        });
+
+        window.addEventListener('resize', () => this.visualizer.resize(window.innerWidth, window.innerHeight));
     }
 
-    /**
-     * The main game loop.
-     * Fetches data from the Manager and passes it to Visualizer and Listener.
-     * @async
-     */
-    async loop() {
-        // --- 1. Get Performance Data (State) ---
-        const performanceData = await this.manager.update();
+    async _init() {
+        try {
+            await this.vision.init();
+            this.vision.start();
+        } catch (err) {
+            console.error('Vision init failed:', err);
+        }
+        requestAnimationFrame(t => this._loop(t));
+    }
 
-        // --- 2. Update Outputs ---
-        this.visualizer.update(performanceData);
-        this.listener.update(performanceData);
+    /** Render loop: never awaits inference (VisionSystem runs on its own). */
+    _loop(nowMs) {
+        const dt = this._lastMs === null ? 1 / 60 : Math.min(0.1, (nowMs - this._lastMs) / 1000);
+        this._lastMs = nowMs;
 
-        requestAnimationFrame(() => this.loop());
+        const frame = this.manager.tick(nowMs / 1000, dt);
+        this.visualizer.update(frame, { mappingMode: this.listener.mappingMode });
+        this.listener.update(frame);
+
+        requestAnimationFrame(t => this._loop(t));
     }
 }
