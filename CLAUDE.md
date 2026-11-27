@@ -21,5 +21,5 @@ Webcam-driven audio-visual instrument, browser-only, zero build. GitHub: `Joseph
 
 ## Next
 - Play-test the mapping modes; choose the default (`CONFIG.defaults.mappingMode`).
-- Stale remote branches on GitHub: cleanup was pending Jo's go-ahead (2026-11-27).
+- Branches (2026-11-27): merged remote ones were already gone; 9 merged local ones deleted. Left: 6 unmerged remote branches and ~29 unmerged local ones. Deleting those loses work, so it needs Jo's per-branch OK.
 - Not yet verified in a real browser after the 2026-11-27 refactor (branch `refactor/ontology`).
