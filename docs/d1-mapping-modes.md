@@ -14,7 +14,7 @@ Quick setups (with `python tools/serve.py` running):
 | Mode | What to do | What to listen for |
 |---|---|---|
 | `canon` | Raise and lower your hands | Only brightness and busyness change. The progression and 120 BPM never move. Most stable and most "composed". |
-| `tempo` | Spread your arms wide, then bring them close | Tempo slides between 80 and 140 BPM (wide = slow). With several people it follows the average. Does it feel like conducting, or like drift? |
+| `tempo` | Spread your arms wide, then bring them close | Tempo slides between 80 and 140 BPM (wide = slow). With several people it follows their average; autopilot only votes when no human is present. Does it feel like conducting, or like drift? |
 | `harmony` | Raise your hands step by step | Your voice (pad, ostinato, arp) jumps up by a chord interval (+4, +7, +11…). Does it stay consonant against the others? |
 | `sculpt` | Tilt the line between your hands like a steering wheel | Ostinato and arp walk up/down the chord tones. Holding a pose repeats the same groove. Voices spread wider in stereo. A part starts at half density and builds over 30 s. |
 

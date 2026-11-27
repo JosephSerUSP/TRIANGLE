@@ -71,3 +71,12 @@ test('evolution arc ramps from entry and resets when silent', async () => {
     assert.equal(evolution(ch, 25, 30), 0.5);
     assert.equal(evolution(ch, 100, 30), 1);
 });
+
+test('humans conduct the tempo when present', () => {
+    const human = { ...snap(1, 0.5), binding: 'physical' };   // wide arms -> slow
+    const bot = { ...snap(0, 0.5), binding: 'virtual' };      // narrow -> fast
+    const c = [human, bot].map(s => voiceControls(s, CONFIG.audio, 'tempo'));
+    assert.equal(targetTempo(c, CONFIG.audio, 'tempo'), CONFIG.audio.bpmMin);
+    const botsOnly = [voiceControls(bot, CONFIG.audio, 'tempo')];
+    assert.equal(targetTempo(botsOnly, CONFIG.audio, 'tempo'), CONFIG.audio.bpmMax);
+});

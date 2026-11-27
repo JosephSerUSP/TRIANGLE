@@ -44,6 +44,7 @@ export function voiceControls(slot, audioCfg, mode) {
     const width = clamp(t.width, 0, 1);
     const ctl = {
         active: slot.active,
+        physical: slot.binding === 'physical',
         expression: height,
         pan: clamp(slot.gesture.orientation.yaw / (Math.PI / 2), -1, 1),
         transpose: 0,
@@ -89,10 +90,15 @@ export function evolution(ch, now, rampSec) {
     return clamp((now - ch.startTime) / rampSec, 0, 1);
 }
 
-/** Target tempo for the ensemble. Wide arms = slow (README's original intent). */
+/**
+ * Target tempo for the ensemble. Wide arms = slow (README's original intent).
+ * Humans conduct: if any physical performer is active, virtual ones don't vote.
+ */
 export function targetTempo(controls, audioCfg, mode) {
     if (mode === 'canon') return audioCfg.baseTempo;
-    const active = controls.filter(c => c.active);
+    const all = controls.filter(c => c.active);
+    const humans = all.filter(c => c.physical);
+    const active = humans.length ? humans : all;
     if (active.length === 0) return audioCfg.baseTempo;
     const w = active.reduce((s, c) => s + c.width, 0) / active.length;
     return lerp(audioCfg.bpmMax, audioCfg.bpmMin, w);
