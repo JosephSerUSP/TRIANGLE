@@ -7,7 +7,7 @@ import { clamp } from '../../core/MathUtils.js';
 import { CHORD_PROGRESSION, CHORD_TONE } from './MusicTheory.js';
 import { PulseBass, StringPad, PluckSynth, ArpSynth, KickDrum } from './Instruments.js';
 import {
-    chordIndexForBar, stepChannel, createChannel, voiceControls, targetTempo, resyncNoteTime, gate, tiltOffset, evolution, bassWalkInterval
+    chordIndexForBar, stepChannel, createChannel, voiceControls, targetTempo, resyncNoteTime, gate, tiltOffset, evolution, bassWalkInterval, heightTone
 } from './Arrangement.js';
 
 const PRIMARY = { bass: PulseBass, ostinato: PluckSynth, arp: ArpSynth };
@@ -141,11 +141,12 @@ export class AudioSystem {
                         if (cycle % 4 === 1 && note === 1) interval = chord.notes[CHORD_TONE.third] - 12; // 1st inversion
                         else if (cycle % 4 === 3) interval = 0; // D pedal
                     }
-                    const walked = note === 1 ? bassWalkInterval(chord, tiltOffset(ctl)) : null;
-                    if (walked !== null) interval = walked; // sculpt: tilt re-voices the bass
-                    // harmony/sculpt: hand height reaches the bass too (folded into one
-                    // octave to stay in register), so a solo performer hears it.
-                    else interval += tr % 12;
+                    // sculpt: tilt re-voices the bass root; otherwise in harmony/sculpt hand
+                    // height does (root -> 3rd -> 5th of the CURRENT chord, always
+                    // consonant), so a solo performer, who holds the bass, hears it.
+                    const tone = tiltOffset(ctl) || heightTone(ctl, this.cfg);
+                    const walked = note === 1 ? bassWalkInterval(chord, tone) : null;
+                    if (walked !== null) interval = walked;
                     v.primary.playNote(this._freq(interval, 1), time, 0.2, 0.5 + timbre * 0.5);
                 }
                 const padBars = ch.status === 'MAIN' ? 2 : 4;

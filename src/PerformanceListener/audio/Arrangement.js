@@ -91,6 +91,16 @@ export function bassWalkInterval(chord, walk) {
 }
 
 /**
+ * Chord-tone step (0 root, 1 3rd, 2 5th) for the bass from the harmony
+ * transpose rank: low hands = root, middle = 3rd, high = 5th.
+ */
+export function heightTone(ctl, audioCfg) {
+    if (!ctl.transpose) return 0;
+    const rank = audioCfg.harmonyIntervals.indexOf(ctl.transpose);
+    return rank <= 2 ? 1 : 2;
+}
+
+/**
  * 0..1 "arc" of a channel: grows over `rampSec` since it entered (idea from the
  * audio-evolution-kick branch). `sculpt` scales density by 0.5 + 0.5 * arc,
  * so a performer's part builds up the longer they stay.

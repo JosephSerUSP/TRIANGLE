@@ -89,3 +89,11 @@ test('sculpt bass walk picks 3rd / 5th an octave down, never below D1', async ()
     assert.equal(bassWalkInterval(D, -2), D.notes[CHORD_TONE.fifth] - 12);
     for (const c of CHORD_PROGRESSION) for (const w of [-2, -1, 1, 2]) assert.ok(bassWalkInterval(c, w) >= -12);
 });
+
+test('harmony bass follows height through chord tones only', async () => {
+    const { heightTone } = await import('../src/PerformanceListener/audio/Arrangement.js');
+    const iv = CONFIG.audio.harmonyIntervals;
+    assert.equal(heightTone({ transpose: 0 }, CONFIG.audio), 0);
+    assert.equal(heightTone({ transpose: iv[1] }, CONFIG.audio), 1);
+    assert.equal(heightTone({ transpose: iv[iv.length - 1] }, CONFIG.audio), 2);
+});
