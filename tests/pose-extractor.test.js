@@ -28,6 +28,20 @@ test('level hands read as roll ~0 (real camera left/right geometry)', () => {
     assert.ok(Math.abs(extractGesture(pose(), OPTS).orientation.roll) < 1e-6);
 });
 
+test('shoulder tilt turns yaw both ways; level shoulders = 0', () => {
+    assert.ok(Math.abs(extractGesture(pose(), OPTS).orientation.yaw) < 1e-12);
+    const a = extractGesture(pose({ tilt: 20 }), OPTS).orientation.yaw;
+    const b = extractGesture(pose({ tilt: -20 }), OPTS).orientation.yaw;
+    assert.ok(a !== 0 && Math.sign(a) === -Math.sign(b));
+});
+
+test('a bigger (closer) body has a less negative depth', () => {
+    const far = extractGesture(pose({ shoulderW: 60, wrists: false }), { ...OPTS });
+    const scale = (p, k) => ({ keypoints: p.keypoints.map(q => ({ ...q, x: 320 + (q.x - 320) * k, y: 200 + (q.y - 200) * k })) });
+    const near = extractGesture(scale(pose({ wrists: false }), 1.5), OPTS);
+    assert.ok(near.depth > far.depth);
+});
+
 test('no wrists -> invisible triangle, roll 0', () => {
     const g = extractGesture(pose({ wrists: false }), OPTS);
     assert.equal(g.triangle.visible, false);
