@@ -70,3 +70,8 @@ test('seeded autopilot is reproducible', async () => {
     };
     assert.equal(run(), run());
 });
+
+test('config is frozen all the way down (slots, mix)', () => {
+    assert.ok(Object.isFrozen(CONFIG.slots) && Object.isFrozen(CONFIG.slots[0]));
+    assert.ok(Object.isFrozen(CONFIG.audio.mix) && Object.isFrozen(CONFIG.audio.mappingModes));
+});
