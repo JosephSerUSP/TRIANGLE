@@ -36,6 +36,11 @@ export class PerformanceVisualizer {
     setViewMode(mode) { this.viewMode = mode; }
     setAudioLocked(locked) { this.audioLocked = locked; }
 
+    /** Briefly shows a centered message (mode changes etc.) in every view mode. */
+    notify(text, seconds = 1.5) {
+        this.toast = { text, until: performance.now() / 1000 + seconds };
+    }
+
     resize(width, height) {
         this.width = width;
         this.height = height;
@@ -56,7 +61,8 @@ export class PerformanceVisualizer {
             mappingMode: extra.mappingMode,
             audio: extra.audio || null,
             recording: !!extra.recording,
-            replay: !!extra.replay
+            replay: !!extra.replay,
+            toast: this.toast && performance.now() / 1000 < this.toast.until ? this.toast.text : null
         });
     }
 

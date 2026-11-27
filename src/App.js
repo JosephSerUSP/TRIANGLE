@@ -57,10 +57,12 @@ export class App {
                 this.visualizer.setViewMode(this.viewMode);
             } else if (k === 'a') {
                 this.manager.setAutopilot(!this.manager.autopilotEnabled);
+                this.visualizer.notify(`AUTOPILOT ${this.manager.autopilotEnabled ? 'ON' : 'OFF'}`);
             } else if (k === 'm') {
                 const modes = CONFIG.audio.mappingModes;
                 const next = modes[(modes.indexOf(this.listener.mappingMode) + 1) % modes.length];
                 this.listener.setMappingMode(next);
+                this.visualizer.notify(`MAPPING: ${next.toUpperCase()}`);
             } else if (k === 'r') {
                 this._toggleRecording();
             }
@@ -72,8 +74,10 @@ export class App {
     _toggleRecording() {
         if (!this.recorder.recording) {
             this.recorder.start(performance.now() / 1000, this.vision.cameraSize);
+            this.visualizer.notify('RECORDING POSES');
             return;
         }
+        this.visualizer.notify('RECORDING SAVED');
         const rec = this.recorder.stop();
         const blob = new Blob([JSON.stringify(rec)], { type: 'application/json' });
         const a = document.createElement('a');

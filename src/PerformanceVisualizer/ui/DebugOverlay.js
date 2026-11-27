@@ -41,6 +41,14 @@ export class DebugOverlay {
             this.ctx.fillText(badge, this.canvas.width - 90, 20);
         }
 
+        if (hud.toast) {
+            this.ctx.font = '16px monospace';
+            this.ctx.textAlign = 'center';
+            this.ctx.fillStyle = '#88eeee';
+            this.ctx.fillText(hud.toast, this.canvas.width / 2, this.canvas.height / 2);
+            this.ctx.textAlign = 'start';
+        }
+
         const show = hud.viewMode === 2;
         if (this.statusEl) this.statusEl.style.display = show ? 'block' : 'none';
         if (this.metricsEl) this.metricsEl.style.display = show ? 'block' : 'none';
