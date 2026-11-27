@@ -66,7 +66,7 @@ test('no unused named imports in src/', () => {
         for (const m of f.src.matchAll(/import\s*\{([^}]*)\}\s*from/g)) {
             for (const raw of m[1].split(',')) {
                 const n = raw.trim().split(/\s+as\s+/).pop();
-                if (n && (f.src.match(new RegExp(`\b${n}\b`, 'g')) || []).length < 2) unused.push(`${f.rel}: ${n}`);
+                if (n && (f.src.match(new RegExp(`\\b${n}\\b`, 'g')) || []).length < 2) unused.push(`${f.rel}: ${n}`);
             }
         }
     }
