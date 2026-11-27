@@ -4,7 +4,7 @@
  * to live in mutable CONFIG (view mode, autopilot, mapping mode) lives here.
  *
  * Keys: D = cycle view mode, A = toggle autopilot, M = cycle audio mapping mode,
- *       R = start/stop pose recording (downloads JSON).
+ *       R = start/stop pose recording (downloads JSON), H = show key help.
  * URL:  ?replay=recordings/<file>.json replays poses instead of the camera.
  *       ?mode=<canon|tempo|harmony|sculpt>  ?autopilot=0|1  ?view=0|1|2  override startup defaults.
  */
@@ -71,6 +71,8 @@ export class App {
                 this.visualizer.notify(`MAPPING: ${next.toUpperCase()}`);
             } else if (k === 'r') {
                 this._toggleRecording();
+            } else if (k === 'h') {
+                this.visualizer.notify('D view · A autopilot · M mapping · R record · H help', 4);
             }
         });
 

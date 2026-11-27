@@ -20,6 +20,7 @@ Allow the camera, then click or press any key to start the sound.
 | A | Toggle autopilot (virtual performers fill slots 1–2 until a person steps in) |
 | M | Cycle the audio mapping mode (see below) |
 | R | Start/stop recording poses (downloads a JSON file) |
+| H | Show the key list again |
 
 ## Body → output
 
