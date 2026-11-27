@@ -6,5 +6,8 @@
   "scripts": {
     "test": "node --test \"tests/*.test.js\"",
     "serve": "python tools/serve.py 8000"
+  },
+  "engines": {
+    "node": ">=21"
   }
 }
