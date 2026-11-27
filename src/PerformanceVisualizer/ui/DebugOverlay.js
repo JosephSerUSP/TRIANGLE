@@ -75,19 +75,24 @@ export class DebugOverlay {
         this._drawSkeletons(frame.debug);
     }
 
-    /** Draws raw poses, mirrored to match the canonical view, scaled to cover the screen. */
+    /** Draws raw poses, mirrored to match the canonical view, cover-fit to the screen. */
     _drawSkeletons(debug) {
         if (!debug || !debug.cameraSize || !debug.poses) return;
         const { width: cw, height: ch } = debug.cameraSize;
         const W = this.canvas.width, H = this.canvas.height;
-        const sx = W / cw, sy = H / ch;
+        // Cover-fit: keep the camera's aspect ratio, centered, cropping overflow.
+        const sc = Math.max(W / cw, H / ch);
+        const ox = (W - cw * sc) / 2, oy = (H - ch * sc) / 2;
         const ctx = this.ctx;
         ctx.strokeStyle = '#88eeee';
         ctx.fillStyle = '#88eeee';
         ctx.lineWidth = 2;
         debug.poses.forEach(pose => {
             const by = Object.fromEntries(pose.keypoints.map(k => [k.name, k]));
-            const P = k => [debug.mirrored === false ? k.x * sx : W - k.x * sx, k.y * sy];
+            const P = k => {
+                const x = ox + k.x * sc;
+                return [debug.mirrored === false ? x : W - x, oy + k.y * sc];
+            };
             EDGES.forEach(([a, b]) => {
                 const ka = by[a], kb = by[b];
                 if (!ka || !kb || ka.score < 0.3 || kb.score < 0.3) return;
