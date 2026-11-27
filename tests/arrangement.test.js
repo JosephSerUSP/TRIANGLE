@@ -26,6 +26,14 @@ test('lifecycle: intro -> main -> outro; return during outro resumes main; then 
     stepChannel(ch, false, 12, 8, 4); stepChannel(ch, false, 17, 8, 4); assert.equal(ch.status, 'SILENT');
 });
 
+test('leaving during INTRO and returning resumes INTRO (not MAIN), keeping its start time', () => {
+    const ch = createChannel();
+    stepChannel(ch, true, 0, 8, 4);
+    stepChannel(ch, false, 3, 8, 4); assert.equal(ch.status, 'OUTRO');
+    stepChannel(ch, true, 4, 8, 4); assert.equal(ch.status, 'INTRO');
+    stepChannel(ch, true, 8.5, 8, 4); assert.equal(ch.status, 'MAIN'); // 8 s from the first entry
+});
+
 const snap = (w, h, active = true) => {
     const g = createRestGesture();
     Object.assign(g.triangle, { visible: true, width: w, height: h });
