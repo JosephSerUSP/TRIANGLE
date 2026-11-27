@@ -110,7 +110,8 @@ export class PerformanceManager {
             slots: this.slots.map(s => s.snapshot()),
             debug: {
                 poses,
-                cameraSize: this.vision ? this.vision.cameraSize : null
+                cameraSize: this.vision ? this.vision.cameraSize : null,
+                mirrored: this.config.vision.mirrored
             }
         };
     }

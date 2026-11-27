@@ -77,7 +77,7 @@ export class DebugOverlay {
         ctx.lineWidth = 2;
         debug.poses.forEach(pose => {
             const by = Object.fromEntries(pose.keypoints.map(k => [k.name, k]));
-            const P = k => [W - k.x * sx, k.y * sy];
+            const P = k => [debug.mirrored === false ? k.x * sx : W - k.x * sx, k.y * sy];
             EDGES.forEach(([a, b]) => {
                 const ka = by[a], kb = by[b];
                 if (!ka || !kb || ka.score < 0.3 || kb.score < 0.3) return;

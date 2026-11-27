@@ -29,7 +29,7 @@
  * @property {number} dtSec
  * @property {boolean} autopilotEnabled
  * @property {ReadonlyArray<SlotSnapshot>} slots
- * @property {{poses:Array, cameraSize:{width:number,height:number}}} [debug]
+ * @property {{poses:Array, cameraSize:{width:number,height:number}, mirrored:boolean}} [debug]
  */
 
 /** Neutral gesture: nobody there. */
